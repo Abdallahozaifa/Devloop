@@ -1,0 +1,35 @@
+{
+  "name": "create-devloop",
+  "version": "0.1.0",
+  "description": "Autonomous QA scaffolding for any project - finds bugs, fixes them, verifies the fix",
+  "type": "module",
+  "bin": {
+    "create-devloop": "./bin/create-devloop.js"
+  },
+  "files": [
+    "bin",
+    "templates"
+  ],
+  "scripts": {
+    "build": "echo 'No build step needed'",
+    "test": "node bin/create-devloop.js --help"
+  },
+  "keywords": [
+    "qa",
+    "testing",
+    "automation",
+    "ai",
+    "claude",
+    "devops",
+    "ci"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/devloop"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

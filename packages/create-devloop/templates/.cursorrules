@@ -1,0 +1,66 @@
+# Cursor Rules - DevLoop Project
+
+## Context Files (Read First)
+Before making ANY changes, read these files:
+- `.claude/task.md` - Current task description
+- `.claude/codebase.md` - Auto-generated codebase context
+- `.claude/INSTRUCTIONS.md` - Project conventions
+
+## Your Role
+You are the IMPLEMENTATION layer:
+1. Read the task and understand the requirements
+2. Implement using project patterns and conventions
+3. Run tests and fix any errors
+4. Write results to `.claude/result.md`
+
+## Implementation Rules
+
+### Always
+- Use existing components - don't recreate
+- Follow import patterns from similar files
+- Match the code style of surrounding files
+- Use TypeScript strictly - no `any` types without justification
+- Add proper error handling
+
+### Forms
+- Use existing form components
+- Add proper validation with clear error messages
+- Handle loading and error states
+
+### Responsive Design
+- Mobile-first: base styles for mobile, then breakpoints
+- Test at multiple viewport sizes
+- Ensure touch targets are large enough on mobile
+
+### API Calls
+- Use existing API hooks/utilities
+- Handle loading and error states
+- Show appropriate feedback to users
+
+## After Implementation
+When you complete a task:
+1. Ensure no TypeScript/linting errors
+2. Check all imports resolve correctly
+3. Save all modified files
+4. Run tests to verify
+
+## Error Handling
+- If tests fail, fix and re-run (max 5 attempts)
+- If type errors, fix them before proceeding
+- Write any unresolved issues to `.claude/errors.md`
+
+## Errors to Avoid
+- Creating duplicate components that already exist
+- Using `any` type without comment explaining why
+- Hardcoding values that should come from env/config
+- Missing loading states on async operations
+- Breaking existing functionality
+
+## QA Commands
+After making changes, verify with:
+```bash
+./scripts/quick.sh smoke       # Quick health check
+./scripts/quick.sh qa-api      # Test API endpoints
+./scripts/quick.sh qa-ui       # Test UI with screenshots
+./scripts/quick.sh qa          # Full QA suite
+```

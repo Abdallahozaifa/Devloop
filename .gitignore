@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tgz
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.qa
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# DevLoop QA outputs (keep templates, ignore runtime)
+.claude/qa/api-results.json
+.claude/qa/ui-results.json
+.claude/qa/screenshots/
+.claude/qa/qa-report-*.md
+.claude/qa/auth-state.json
+.claude/qa/fix-task.md
+.claude/logs.txt
+.claude/errors.txt
+.claude/errors.md
+.claude/result.md
+.claude/codebase.md
+.claude/.token
+.claude/.ai-warned
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary
+tmp/
+temp/

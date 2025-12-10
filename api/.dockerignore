@@ -1,0 +1,24 @@
+# .dockerignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+.env
+.env.local
+venv
+.venv
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+.ruff_cache
+*.log
+.git
+.gitignore
+README.md
+Dockerfile
+docker-compose.yml
+fly.toml

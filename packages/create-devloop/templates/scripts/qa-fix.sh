@@ -1,5 +1,5 @@
 #!/bin/bash
-# qa-fix.sh - Auto-fix loop using Claude CLI
+# qa-fix.sh - Auto-fix loop using DevLoop AI
 #
 # Reads QA results and attempts to fix failures automatically
 #
@@ -14,7 +14,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-QA_DIR="$PROJECT_DIR/.claude/qa"
+QA_DIR="$PROJECT_DIR/.devloop/qa"
 
 cd "$PROJECT_DIR"
 
@@ -52,10 +52,10 @@ echo ""
 echo "Max attempts: $MAX_ATTEMPTS"
 echo ""
 
-# Check if Claude CLI is available
-if ! command -v claude &> /dev/null; then
-    echo -e "${RED}Error: Claude CLI not found.${NC}"
-    echo "Install it with: npm install -g @anthropic-ai/claude-cli"
+# Check if DevLoop AI is available
+if ! command -v devloop &> /dev/null; then
+    echo -e "${RED}Error: DevLoop AI not found.${NC}"
+    echo "Install it with: npm install -g devloop-ai"
     exit 1
 fi
 
@@ -118,7 +118,7 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     echo -e "$FAILURES"
     echo ""
 
-    # Create fix task for Claude
+    # Create fix task for DevLoop AI
     TASK_FILE="$QA_DIR/fix-task.md"
     cat > "$TASK_FILE" << EOF
 # QA Fix Task - Attempt $ATTEMPT
@@ -132,8 +132,8 @@ $FAILURES
 3. After fixing, the QA tests will be re-run automatically
 
 ## Context
-- Read .claude/INSTRUCTIONS.md for project conventions
-- Read .claude/features.md for feature documentation
+- Read .devloop/INSTRUCTIONS.md for project conventions
+- Read .devloop/features.md for feature documentation
 - Check recent git changes with \`git diff\`
 
 ## Rules
@@ -143,16 +143,16 @@ $FAILURES
 - Add error handling where missing
 EOF
 
-    echo "Running Claude CLI to fix issues..."
+    echo "Running DevLoop AI to fix issues..."
     echo ""
 
-    # Run Claude CLI with the fix task
-    claude --print "You are fixing QA test failures.
+    # Run DevLoop AI with the fix task
+    devloop --print "You are fixing QA test failures.
 
 READ FIRST:
 - $TASK_FILE (the specific failures to fix)
-- .claude/INSTRUCTIONS.md (project conventions)
-- .claude/features.md (feature documentation)
+- .devloop/INSTRUCTIONS.md (project conventions)
+- .devloop/features.md (feature documentation)
 
 YOUR JOB:
 1. Analyze each failure listed in the task file
@@ -162,12 +162,12 @@ YOUR JOB:
 IMPORTANT:
 - Focus on the actual error messages
 - Make minimal changes - don't refactor unrelated code
-- If you can't fix something, document why in .claude/qa/unfixable.md
+- If you can't fix something, document why in .devloop/qa/unfixable.md
 
 Start by reading the task file and analyzing the failures." || true
 
     echo ""
-    echo "Claude fix attempt completed."
+    echo "DevLoop AI fix attempt completed."
     echo ""
 
     # Re-run QA tests

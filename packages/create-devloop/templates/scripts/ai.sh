@@ -1,11 +1,11 @@
 #!/bin/bash
-# ai.sh - Run Claude CLI with auto-approve (no permission prompts)
+# ai.sh - Run DevLoop AI with auto-approve (no permission prompts)
 #
-# This wrapper runs Claude CLI with --dangerously-skip-permissions flag,
+# This wrapper runs DevLoop AI with --dangerously-skip-permissions flag,
 # which skips all permission prompts and auto-approves tool calls.
 #
 # WARNING: Only use this in trusted environments where you understand
-# the risks of allowing Claude to execute commands without confirmation.
+# the risks of allowing DevLoop AI to execute commands without confirmation.
 #
 # Usage:
 #   ./scripts/ai.sh "Your prompt here"
@@ -19,19 +19,19 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Check if claude CLI is available
-if ! command -v claude &> /dev/null; then
-    echo "Claude CLI not found. Install it:"
-    echo "   npm install -g @anthropic-ai/claude-cli"
+# Check if devloop CLI is available
+if ! command -v devloop &> /dev/null; then
+    echo "DevLoop AI not found. Install it:"
+    echo "   npm install -g devloop-ai"
     exit 1
 fi
 
 # Show warning banner on first use
-if [ ! -f ".claude/.ai-warned" ]; then
+if [ ! -f ".devloop/.ai-warned" ]; then
     echo "AUTO-APPROVE MODE"
     echo "=============================================="
-    echo "Running Claude with --dangerously-skip-permissions"
-    echo "Claude will execute commands WITHOUT asking."
+    echo "Running DevLoop AI with --dangerously-skip-permissions"
+    echo "DevLoop AI will execute commands WITHOUT asking."
     echo ""
     echo "This includes:"
     echo "  - File reads, writes, and deletions"
@@ -41,9 +41,9 @@ if [ ! -f ".claude/.ai-warned" ]; then
     echo "Only use this in trusted projects."
     echo "=============================================="
     echo ""
-    mkdir -p .claude
-    touch .claude/.ai-warned
+    mkdir -p .devloop
+    touch .devloop/.ai-warned
 fi
 
-# Pass all arguments to claude with auto-approve flag
-exec claude --dangerously-skip-permissions "$@"
+# Pass all arguments to devloop with auto-approve flag
+exec devloop --dangerously-skip-permissions "$@"

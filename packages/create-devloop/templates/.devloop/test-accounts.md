@@ -56,5 +56,5 @@ curl -X POST "$DEVLOOP_API_URL/resources" \
 
 ## Token Caching
 
-QA scripts cache authentication tokens to `.claude/.token` for performance.
+QA scripts cache authentication tokens to `.devloop/.token` for performance.
 This file is gitignored and auto-refreshed when expired.

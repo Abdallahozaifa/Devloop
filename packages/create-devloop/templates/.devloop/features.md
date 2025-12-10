@@ -92,8 +92,8 @@ DEVLOOP_API_URL=https://your-api.example.com/api
 QA_EMAIL=qa@example.com
 QA_PASSWORD=QATest123!
 
-# For visual verification
-ANTHROPIC_API_KEY=<your-key>
+# For visual verification (DevLoop Vision)
+DEVLOOP_VISION_KEY=<your-key>
 ```
 
 ## Priority Legend

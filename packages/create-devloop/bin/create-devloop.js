@@ -4,10 +4,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
+import https from 'https';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
+
+const API_URL = process.env.DEVLOOP_API_URL || 'https://api.devloop.dev';
+const LICENSE_CACHE_FILE = path.join(os.homedir(), '.devloop-license');
+const LICENSE_CACHE_HOURS = 24;
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -47,19 +53,23 @@ function showHelp() {
 Usage: npx create-devloop [options]
 
 Options:
-  --help, -h     Show this help message
-  --yes, -y      Skip prompts and use defaults
+  --help, -h       Show this help message
+  --yes, -y        Skip prompts and use defaults
+  --license, -l    Your DevLoop license key (or use DEVLOOP_LICENSE_KEY env)
 
 What this does:
-  1. Creates .claude/ folder with QA documentation templates
-  2. Creates scripts/ folder with automated QA scripts
-  3. Creates .cursorrules for AI-assisted development
+  1. Verifies your DevLoop license
+  2. Creates .devloop/ folder with QA documentation templates
+  3. Creates scripts/ folder with automated QA scripts
+  4. Creates .cursorrules for AI-assisted development
 
 The scripts enable:
   - Autonomous API endpoint testing
   - UI screenshot testing with AI vision
   - Auto-fix loop that finds bugs and fixes them
-  - Integration with Claude CLI for AI-powered debugging
+  - Integration with DevLoop AI for AI-powered debugging
+
+Get your license at: https://devloop.dev
 `, COLORS.reset);
 }
 
@@ -75,6 +85,142 @@ async function prompt(question) {
       resolve(answer);
     });
   });
+}
+
+async function promptHidden(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    // Disable echo for password input
+    if (process.stdin.isTTY) {
+      process.stdout.write(question);
+      const stdin = process.openStdin();
+      let input = '';
+
+      const onData = (char) => {
+        char = char.toString();
+        if (char === '\n' || char === '\r') {
+          stdin.removeListener('data', onData);
+          process.stdout.write('\n');
+          rl.close();
+          resolve(input);
+        } else if (char === '\u0003') {
+          // Ctrl+C
+          process.exit();
+        } else if (char === '\u007F') {
+          // Backspace
+          if (input.length > 0) {
+            input = input.slice(0, -1);
+          }
+        } else {
+          input += char;
+        }
+      };
+
+      stdin.setRawMode(true);
+      stdin.resume();
+      stdin.on('data', onData);
+    } else {
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
+    }
+  });
+}
+
+function httpRequest(url, options, data) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const reqOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+    };
+
+    const req = https.request(reqOptions, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, data: JSON.parse(body) });
+        } catch {
+          resolve({ status: res.statusCode, data: body });
+        }
+      });
+    });
+
+    req.on('error', reject);
+
+    if (data) {
+      req.write(JSON.stringify(data));
+    }
+    req.end();
+  });
+}
+
+function getCachedLicense() {
+  try {
+    if (!fs.existsSync(LICENSE_CACHE_FILE)) return null;
+
+    const cache = JSON.parse(fs.readFileSync(LICENSE_CACHE_FILE, 'utf8'));
+    const age = (Date.now() - cache.timestamp) / (1000 * 60 * 60);
+
+    if (age > LICENSE_CACHE_HOURS) {
+      return null; // Cache expired
+    }
+
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function saveLicenseCache(licenseKey, data) {
+  const cache = {
+    license_key: licenseKey,
+    timestamp: Date.now(),
+    ...data,
+  };
+  fs.writeFileSync(LICENSE_CACHE_FILE, JSON.stringify(cache, null, 2));
+}
+
+async function verifyLicense(licenseKey) {
+  // Check cache first
+  const cached = getCachedLicense();
+  if (cached && cached.license_key === licenseKey && cached.valid) {
+    return { valid: true, cached: true, plan: cached.plan };
+  }
+
+  // Verify with API
+  try {
+    log('Verifying license...', COLORS.blue);
+
+    const response = await httpRequest(`${API_URL}/api/v1/license/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }, { license_key: licenseKey });
+
+    if (response.status === 200 && response.data.valid) {
+      saveLicenseCache(licenseKey, response.data);
+      return { valid: true, cached: false, plan: response.data.plan };
+    }
+
+    return { valid: false, message: response.data.message || 'Invalid license key' };
+  } catch (error) {
+    // If API is unreachable, use cached data if available (grace period)
+    if (cached && cached.license_key === licenseKey) {
+      log('API unreachable, using cached license data', COLORS.yellow);
+      return { valid: true, cached: true, plan: cached.plan };
+    }
+
+    return { valid: false, message: 'Could not verify license. Check your internet connection.' };
+  }
 }
 
 function copyDir(src, dest) {
@@ -142,14 +288,53 @@ async function main() {
 
   printBanner();
 
-  log(`Setting up DevLoop in: ${targetDir}\n`, COLORS.blue);
+  // Get license key
+  let licenseKey = process.env.DEVLOOP_LICENSE_KEY;
+
+  // Check for --license flag
+  const licenseIdx = args.findIndex(a => a === '--license' || a === '-l');
+  if (licenseIdx !== -1 && args[licenseIdx + 1]) {
+    licenseKey = args[licenseIdx + 1];
+  }
+
+  // Prompt for license if not provided
+  if (!licenseKey) {
+    log('DevLoop requires a valid license to run.', COLORS.yellow);
+    log('Get yours at: https://devloop.dev\n', COLORS.blue);
+    licenseKey = await prompt(`Enter your license key (DL-XXXX-XXXX-XXXX): `);
+
+    if (!licenseKey) {
+      log('\nLicense key is required. Get one at https://devloop.dev', COLORS.red);
+      process.exit(1);
+    }
+  }
+
+  // Validate license format
+  const licensePattern = /^DL-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/i;
+  if (!licensePattern.test(licenseKey)) {
+    log('\nInvalid license key format. Expected: DL-XXXX-XXXX-XXXX', COLORS.red);
+    process.exit(1);
+  }
+
+  // Verify license
+  const verification = await verifyLicense(licenseKey);
+
+  if (!verification.valid) {
+    log(`\nLicense verification failed: ${verification.message}`, COLORS.red);
+    log('Get a valid license at: https://devloop.dev', COLORS.yellow);
+    process.exit(1);
+  }
+
+  log(`License verified! Plan: ${verification.plan}${verification.cached ? ' (cached)' : ''}`, COLORS.green);
+
+  log(`\nSetting up DevLoop in: ${targetDir}\n`, COLORS.blue);
 
   // Detect project type
   const projectType = await detectProjectType(targetDir);
   log(`Detected project type: ${projectType}`, COLORS.green);
 
   if (!skipPrompts) {
-    const confirm = await prompt(`\nThis will create:\n  - .claude/ folder (QA config & docs)\n  - scripts/ folder (QA automation scripts)\n  - .cursorrules (AI coding guidelines)\n\nContinue? [Y/n] `);
+    const confirm = await prompt(`\nThis will create:\n  - .devloop/ folder (QA config & docs)\n  - scripts/ folder (QA automation scripts)\n  - .cursorrules (AI coding guidelines)\n\nContinue? [Y/n] `);
     if (confirm.toLowerCase() === 'n') {
       log('\nAborted.', COLORS.yellow);
       process.exit(0);
@@ -159,18 +344,18 @@ async function main() {
   log('\nCreating DevLoop structure...\n', COLORS.blue);
 
   // Copy templates
-  const claudeTemplateDir = path.join(TEMPLATES_DIR, '.claude');
+  const devloopTemplateDir = path.join(TEMPLATES_DIR, '.devloop');
   const scriptsTemplateDir = path.join(TEMPLATES_DIR, 'scripts');
   const cursorrules = path.join(TEMPLATES_DIR, '.cursorrules');
 
-  const targetClaudeDir = path.join(targetDir, '.claude');
+  const targetDevloopDir = path.join(targetDir, '.devloop');
   const targetScriptsDir = path.join(targetDir, 'scripts');
   const targetCursorrules = path.join(targetDir, '.cursorrules');
 
-  // Create .claude folder
-  if (fs.existsSync(claudeTemplateDir)) {
-    copyDir(claudeTemplateDir, targetClaudeDir);
-    log('  Created .claude/', COLORS.green);
+  // Create .devloop folder
+  if (fs.existsSync(devloopTemplateDir)) {
+    copyDir(devloopTemplateDir, targetDevloopDir);
+    log('  Created .devloop/', COLORS.green);
   }
 
   // Create scripts folder
@@ -186,25 +371,41 @@ async function main() {
     log('  Created .cursorrules', COLORS.green);
   }
 
-  // Create .claude/qa directory
-  const qaDir = path.join(targetClaudeDir, 'qa');
+  // Create .devloop/qa directory
+  const qaDir = path.join(targetDevloopDir, 'qa');
   if (!fs.existsSync(qaDir)) {
     fs.mkdirSync(qaDir, { recursive: true });
     fs.mkdirSync(path.join(qaDir, 'screenshots'), { recursive: true });
   }
 
+  // Save license key to .env if not already there
+  const envFile = path.join(targetDir, '.env');
+  let envContent = '';
+  if (fs.existsSync(envFile)) {
+    envContent = fs.readFileSync(envFile, 'utf8');
+  }
+
+  if (!envContent.includes('DEVLOOP_LICENSE_KEY')) {
+    const licenseEnv = `\n# DevLoop License\nDEVLOOP_LICENSE_KEY=${licenseKey}\n`;
+    fs.appendFileSync(envFile, licenseEnv);
+    log('  Added DEVLOOP_LICENSE_KEY to .env', COLORS.green);
+  }
+
   log(`
 ${COLORS.green}${COLORS.bright}DevLoop is ready!${COLORS.reset}
 
+${COLORS.cyan}Your license:${COLORS.reset} ${licenseKey}
+${COLORS.cyan}Plan:${COLORS.reset} ${verification.plan}
+
 ${COLORS.cyan}Next steps:${COLORS.reset}
 
-1. Configure your project in ${COLORS.yellow}.claude/INSTRUCTIONS.md${COLORS.reset}
+1. Configure your project in ${COLORS.yellow}.devloop/INSTRUCTIONS.md${COLORS.reset}
    - Set your tech stack, URLs, and conventions
 
-2. Add test accounts in ${COLORS.yellow}.claude/test-accounts.md${COLORS.reset}
+2. Add test accounts in ${COLORS.yellow}.devloop/test-accounts.md${COLORS.reset}
    - Create QA credentials for automated testing
 
-3. Define features in ${COLORS.yellow}.claude/features.md${COLORS.reset}
+3. Define features in ${COLORS.yellow}.devloop/features.md${COLORS.reset}
    - List your routes and API endpoints
 
 4. Run your first QA test:
@@ -217,11 +418,13 @@ ${COLORS.cyan}Quick commands:${COLORS.reset}
   ./scripts/quick.sh qa-fix      Auto-fix failures with AI
 
 ${COLORS.cyan}Environment variables:${COLORS.reset}
-  DEVLOOP_API_URL     Your API base URL
-  DEVLOOP_APP_URL     Your app base URL
-  ANTHROPIC_API_KEY   For AI vision checks (optional)
+  DEVLOOP_LICENSE_KEY   Your license key (already set in .env)
+  DEVLOOP_API_URL       Your API base URL
+  DEVLOOP_APP_URL       Your app base URL
 
 ${COLORS.yellow}Tip:${COLORS.reset} Run ${COLORS.blue}./scripts/quick.sh${COLORS.reset} to see all available commands.
+
+${COLORS.cyan}Dashboard:${COLORS.reset} https://devloop.dev/dashboard
 `);
 }
 

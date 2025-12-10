@@ -2,16 +2,16 @@
 
 ## Context Files (Read First)
 Before making ANY changes, read these files:
-- `.claude/task.md` - Current task description
-- `.claude/codebase.md` - Auto-generated codebase context
-- `.claude/INSTRUCTIONS.md` - Project conventions
+- `.devloop/task.md` - Current task description
+- `.devloop/codebase.md` - Auto-generated codebase context
+- `.devloop/INSTRUCTIONS.md` - Project conventions
 
 ## Your Role
 You are the IMPLEMENTATION layer:
 1. Read the task and understand the requirements
 2. Implement using project patterns and conventions
 3. Run tests and fix any errors
-4. Write results to `.claude/result.md`
+4. Write results to `.devloop/result.md`
 
 ## Implementation Rules
 
@@ -47,7 +47,7 @@ When you complete a task:
 ## Error Handling
 - If tests fail, fix and re-run (max 5 attempts)
 - If type errors, fix them before proceeding
-- Write any unresolved issues to `.claude/errors.md`
+- Write any unresolved issues to `.devloop/errors.md`
 
 ## Errors to Avoid
 - Creating duplicate components that already exist

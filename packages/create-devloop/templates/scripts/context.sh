@@ -1,10 +1,10 @@
 #!/bin/bash
 # context.sh - Generates codebase context for AI tools
-# Run this to give Claude fresh context about your project
+# Run this to give DevLoop AI fresh context about your project
 
 set -e
 
-OUT=".claude/codebase.md"
+OUT=".devloop/codebase.md"
 PROJECT_NAME=$(basename "$(pwd)")
 
 echo "Generating codebase context..."
@@ -61,16 +61,16 @@ if [ -f "requirements.txt" ]; then
 fi
 
 # Current task if exists
-if [ -f ".claude/task.md" ]; then
+if [ -f ".devloop/task.md" ]; then
     echo "## Current Task" >> "$OUT"
-    cat .claude/task.md >> "$OUT"
+    cat .devloop/task.md >> "$OUT"
     echo "" >> "$OUT"
 fi
 
 # Known errors if exist
-if [ -f ".claude/errors.md" ]; then
+if [ -f ".devloop/errors.md" ]; then
     echo "## Known Errors" >> "$OUT"
-    cat .claude/errors.md >> "$OUT"
+    cat .devloop/errors.md >> "$OUT"
     echo "" >> "$OUT"
 fi
 

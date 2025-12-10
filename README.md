@@ -4,6 +4,22 @@
 
 Autonomous QA that finds bugs, fixes them, and verifies the fix. Built for indie hackers who ship fast.
 
+## Pricing
+
+| Plan | Price | Projects |
+|------|-------|----------|
+| Solo | $19/mo | 1 project |
+| Pro | $39/mo | 5 projects |
+| Team | $79/mo | Unlimited |
+
+All plans include:
+- Unlimited QA runs
+- AI Vision checks
+- Auto-fix with Claude CLI
+- Dashboard access
+
+**[Get Started](https://devloop.dev)**
+
 ## What is DevLoop?
 
 DevLoop is a QA automation toolkit that integrates with Claude CLI to provide:
@@ -20,6 +36,9 @@ DevLoop is a QA automation toolkit that integrates with Claude CLI to provide:
 ```bash
 # In your project directory
 npx create-devloop
+
+# Enter your license key (get one at devloop.dev)
+# DL-XXXX-XXXX-XXXX
 
 # Run smoke test
 ./scripts/qa.sh smoke
@@ -81,6 +100,9 @@ your-project/
 ### Environment Variables
 
 ```bash
+# License (set automatically by create-devloop)
+DEVLOOP_LICENSE_KEY=DL-XXXX-XXXX-XXXX
+
 # Required
 DEVLOOP_API_URL=https://your-api.example.com/api
 DEVLOOP_APP_URL=https://your-app.example.com
@@ -101,21 +123,28 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## How It Works
 
-### 1. API Testing (`qa-api.sh`)
+### 1. License Verification
+
+The CLI verifies your license on each run:
+- Checks against the DevLoop API
+- Caches verification for 24 hours
+- Works offline with cached verification
+
+### 2. API Testing (`qa-api.sh`)
 
 - Tests each endpoint defined in `features.md`
 - Handles authentication automatically
 - Validates response codes
 - Checks protected endpoints reject unauthenticated requests
 
-### 2. UI Testing (`qa-ui.sh`)
+### 3. UI Testing (`qa-ui.sh`)
 
 - Uses Playwright to capture screenshots
 - Supports desktop, mobile, and tablet viewports
 - Optionally uses Claude Vision to analyze screenshots
 - Detects broken layouts and missing elements
 
-### 3. Auto-Fix Loop (`qa-fix.sh`)
+### 4. Auto-Fix Loop (`qa-fix.sh`)
 
 - Collects failures from QA results
 - Creates a task for Claude CLI
@@ -123,21 +152,28 @@ ANTHROPIC_API_KEY=sk-ant-...
 - Re-runs tests to verify
 - Loops until all tests pass (max 3 attempts)
 
-## Integration with Claude CLI
+## Dashboard
 
-DevLoop is designed to work with [Claude CLI](https://github.com/anthropics/claude-cli). The auto-fix loop uses Claude to:
+Your license includes access to the DevLoop dashboard at [devloop.dev/dashboard](https://devloop.dev/dashboard):
 
-1. Read failure reports
-2. Analyze the codebase
-3. Make targeted fixes
-4. Verify the fix works
+- View your license key
+- Manage projects
+- Track QA run history
+- See pass/fail statistics
+- Manage billing
 
-```bash
-# Run Claude CLI with auto-approve on current task
-./scripts/quick.sh ai-task
+## CI/CD Integration
 
-# Run Claude CLI with a custom prompt
-./scripts/quick.sh ai "Fix the login page"
+DevLoop works in CI/CD pipelines. Set your license key as an environment variable:
+
+```yaml
+# GitHub Actions
+env:
+  DEVLOOP_LICENSE_KEY: ${{ secrets.DEVLOOP_LICENSE_KEY }}
+
+steps:
+  - name: Run DevLoop QA
+    run: ./scripts/qa.sh all
 ```
 
 ## Project Structure
@@ -156,47 +192,36 @@ DevLoop adapts to your project structure. It works with:
 # 1. Set up DevLoop in your project
 npx create-devloop
 
-# 2. Configure your project
+# 2. Enter your license key
+# DL-XXXX-XXXX-XXXX
+
+# 3. Configure your project
 vim .claude/INSTRUCTIONS.md
 vim .claude/features.md
 
-# 3. Set environment variables
+# 4. Set environment variables
 export DEVLOOP_API_URL="http://localhost:3000/api"
 export DEVLOOP_APP_URL="http://localhost:3000"
 
-# 4. Run smoke test
+# 5. Run smoke test
 ./scripts/qa.sh smoke
 
-# 5. Run full QA suite
+# 6. Run full QA suite
 ./scripts/qa.sh all
 
-# 6. Auto-fix any failures
+# 7. Auto-fix any failures
 ./scripts/qa-fix.sh
 
-# 7. Check the report
+# 8. Check the report
 cat .claude/qa/qa-report-*.md
 ```
 
-## Development
+## Support
 
-```bash
-# Clone the repo
-git clone https://github.com/yourusername/devloop
-cd devloop
-
-# Install CLI dependencies
-cd packages/create-devloop
-npm install
-
-# Test the CLI
-node bin/create-devloop.js --help
-
-# Run landing page dev server
-cd ../../landing
-npm install
-npm run dev
-```
+- **Dashboard**: [devloop.dev/dashboard](https://devloop.dev/dashboard)
+- **Documentation**: [devloop.dev/docs](https://devloop.dev/docs)
+- **Email**: support@devloop.dev
 
 ## License
 
-MIT
+Proprietary. See [devloop.dev/terms](https://devloop.dev/terms) for license terms.

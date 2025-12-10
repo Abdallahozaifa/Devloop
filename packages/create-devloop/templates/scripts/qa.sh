@@ -15,7 +15,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-QA_DIR="$PROJECT_DIR/.claude/qa"
+QA_DIR="$PROJECT_DIR/.devloop/qa"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Colors
@@ -38,7 +38,7 @@ fi
 # Default values
 DEVLOOP_API_URL=${DEVLOOP_API_URL:-"http://localhost:3000/api"}
 DEVLOOP_APP_URL=${DEVLOOP_APP_URL:-"http://localhost:3000"}
-TOKEN_FILE="$PROJECT_DIR/.claude/.token"
+TOKEN_FILE="$PROJECT_DIR/.devloop/.token"
 
 # Auto-authenticate if no token
 ensure_auth() {
@@ -206,7 +206,7 @@ show_help() {
     echo "  ui        Run UI tests only"
     echo "  smoke     Quick smoke test (critical paths only)"
     echo "  report    Generate QA report from last run"
-    echo "  fix       Run auto-fix loop with Claude CLI"
+    echo "  fix       Run auto-fix loop with DevLoop AI"
     echo ""
     echo "Options:"
     echo "  --priority=HIGH    Run only HIGH priority tests"

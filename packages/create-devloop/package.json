@@ -1,7 +1,7 @@
 {
   "name": "create-devloop",
-  "version": "0.1.0",
-  "description": "Autonomous QA scaffolding for any project - finds bugs, fixes them, verifies the fix",
+  "version": "0.2.0",
+  "description": "Autonomous QA scaffolding with live production testing - finds bugs, fixes them, verifies the fix",
   "type": "module",
   "bin": {
     "create-devloop": "./bin/create-devloop.js"
@@ -19,9 +19,13 @@
     "testing",
     "automation",
     "ai",
-    "claude",
+    "devloop",
     "devops",
-    "ci"
+    "ci",
+    "production-testing",
+    "health-check",
+    "smoke-test",
+    "monitoring"
   ],
   "author": "",
   "license": "MIT",

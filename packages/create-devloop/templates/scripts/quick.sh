@@ -12,10 +12,10 @@ case "$1" in
 
     # Paste task from clipboard (macOS)
     paste|p)
-        pbpaste > .claude/task.md
-        echo "Task saved to .claude/task.md"
+        pbpaste > .devloop/task.md
+        echo "Task saved to .devloop/task.md"
         echo ""
-        head -15 .claude/task.md
+        head -15 .devloop/task.md
         ;;
 
     # Generate context
@@ -27,21 +27,21 @@ case "$1" in
         fi
         ;;
 
-    # Run Claude CLI with auto-approve
+    # Run DevLoop AI with auto-approve
     ai)
         if [ -f "$SCRIPT_DIR/ai.sh" ]; then
             ./scripts/ai.sh "${@:2}"
         else
-            claude "${@:2}"
+            devloop "${@:2}"
         fi
         ;;
 
-    # Run Claude CLI on current task
+    # Run DevLoop AI on current task
     ai-task)
         if [ -f "$SCRIPT_DIR/ai.sh" ]; then
-            ./scripts/ai.sh "Read .claude/task.md and .claude/INSTRUCTIONS.md. Implement the task."
+            ./scripts/ai.sh "Read .devloop/task.md and .devloop/INSTRUCTIONS.md. Implement the task."
         else
-            claude "Read .claude/task.md and .claude/INSTRUCTIONS.md. Implement the task."
+            devloop "Read .devloop/task.md and .devloop/INSTRUCTIONS.md. Implement the task."
         fi
         ;;
 
@@ -73,8 +73,8 @@ case "$1" in
         echo "=============="
         echo ""
         echo "Current task:"
-        if [ -f ".claude/task.md" ]; then
-            head -5 .claude/task.md
+        if [ -f ".devloop/task.md" ]; then
+            head -5 .devloop/task.md
         else
             echo "  (none)"
         fi
@@ -88,7 +88,7 @@ case "$1" in
 
     # Clear task
     clear)
-        rm -f .claude/task.md .claude/result.md .claude/errors.md .claude/logs.txt
+        rm -f .devloop/task.md .devloop/result.md .devloop/errors.md .devloop/logs.txt
         echo "Cleared task files"
         ;;
 
@@ -132,13 +132,13 @@ case "$1" in
         echo "Commands:"
         echo ""
         echo "  Task Management:"
-        echo "    paste, p       Paste task from clipboard to .claude/task.md"
+        echo "    paste, p       Paste task from clipboard to .devloop/task.md"
         echo "    context, c     Generate fresh codebase context"
         echo "    clear          Clear task files"
         echo ""
         echo "  Development:"
-        echo "    ai [prompt]    Run Claude CLI with prompt"
-        echo "    ai-task        Run Claude CLI on current task"
+        echo "    ai [prompt]    Run DevLoop AI with prompt"
+        echo "    ai-task        Run DevLoop AI on current task"
         echo "    test, t        Run tests"
         echo "    build, b       Build project"
         echo "    status, s      Show project status"
@@ -155,6 +155,6 @@ case "$1" in
         echo "  ./scripts/quick.sh smoke           # Quick health check"
         echo "  ./scripts/quick.sh qa              # Full QA suite"
         echo "  ./scripts/quick.sh qa-fix          # Auto-fix failures"
-        echo "  ./scripts/quick.sh ai 'Fix bug X'  # Run Claude on prompt"
+        echo "  ./scripts/quick.sh ai 'Fix bug X'  # Run DevLoop AI on prompt"
         ;;
 esac

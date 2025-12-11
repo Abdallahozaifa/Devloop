@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.subscription import Subscription
     from app.models.license import License
     from app.models.project import Project
+    from app.models.daily_usage import DailyUsage
 
 
 class User(Base):
@@ -68,6 +69,10 @@ class User(Base):
     )
     projects: Mapped[list["Project"]] = relationship(
         "Project",
+        back_populates="user"
+    )
+    daily_usage: Mapped[list["DailyUsage"]] = relationship(
+        "DailyUsage",
         back_populates="user"
     )
 

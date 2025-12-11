@@ -17,6 +17,7 @@ from app.models.subscription import Subscription, PlanType
 from app.models.license import License, LicenseStatus
 from app.models.production_test_run import ProductionTestRun
 from app.services.production_testing import ProductionTestingService
+from app.services.throttling_service import ThrottlingService
 from app.schemas.production_testing import (
     TriggerProductionTestRequest,
     ProductionTestRunResponse,
@@ -117,6 +118,19 @@ class QARunResponse(BaseModel):
         from_attributes = True
 
 
+class UsageStats(BaseModel):
+    """Daily usage statistics for throttling display."""
+    plan: str
+    daily_limit: int
+    runs_used: int
+    runs_remaining: int
+    is_hard_limit: bool
+    throttle_hits: int
+    reset_time: str
+    over_limit: bool
+    percentage_used: int
+
+
 class DashboardSummary(BaseModel):
     total_projects: int
     total_qa_runs: int
@@ -125,6 +139,7 @@ class DashboardSummary(BaseModel):
     license_key: Optional[str] = None
     plan: Optional[str] = None
     subscription_active: bool = False
+    usage: Optional[UsageStats] = None
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -175,6 +190,20 @@ async def get_dashboard_summary(
     )
     subscription = sub_result.scalar_one_or_none()
 
+    # Get usage stats
+    usage_stats = await ThrottlingService.get_usage_stats(db, current_user)
+    usage = UsageStats(
+        plan=usage_stats["plan"],
+        daily_limit=usage_stats["daily_limit"],
+        runs_used=usage_stats["runs_used"],
+        runs_remaining=usage_stats["runs_remaining"],
+        is_hard_limit=usage_stats["is_hard_limit"],
+        throttle_hits=usage_stats["throttle_hits"],
+        reset_time=usage_stats["reset_time"],
+        over_limit=usage_stats["over_limit"],
+        percentage_used=usage_stats["percentage_used"],
+    )
+
     return DashboardSummary(
         total_projects=total_projects,
         total_qa_runs=total_runs,
@@ -183,6 +212,7 @@ async def get_dashboard_summary(
         license_key=license.key if license else None,
         plan=subscription.plan.value if subscription else None,
         subscription_active=subscription.is_active if subscription else False,
+        usage=usage,
     )
 
 

@@ -23,6 +23,16 @@ class VerifyLicenseRequest(BaseModel):
     machine_id: Optional[str] = None
 
 
+class ThrottleInfo(BaseModel):
+    """Throttle information returned with license verification."""
+    allowed: bool
+    runs_used: int
+    runs_limit: int
+    is_hard_limit: bool
+    delay_seconds: int
+    throttle_message: str
+
+
 class VerifyLicenseResponse(BaseModel):
     """License verification response."""
     valid: bool
@@ -31,3 +41,17 @@ class VerifyLicenseResponse(BaseModel):
     plan: Optional[str] = None
     expires_at: Optional[datetime] = None
     message: Optional[str] = None
+    throttle: Optional[ThrottleInfo] = None
+
+
+class RecordRunRequest(BaseModel):
+    """Request to record a QA run for throttling."""
+    license_key: str
+
+
+class RecordRunResponse(BaseModel):
+    """Response after recording a run."""
+    success: bool
+    runs_used: int
+    runs_limit: int
+    message: str

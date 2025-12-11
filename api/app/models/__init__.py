@@ -5,6 +5,7 @@ from app.models.license import License, LicenseStatus
 from app.models.project import Project
 from app.models.qa_run import QARun, QARunStatus
 from app.models.production_test_run import ProductionTestRun, ProductionTestRunStatus
+from app.models.daily_usage import DailyUsage
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "QARunStatus",
     "ProductionTestRun",
     "ProductionTestRunStatus",
+    "DailyUsage",
 ]

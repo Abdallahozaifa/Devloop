@@ -1,0 +1,81 @@
+{
+  "platform": "facebook",
+  "campaign_name": "DevLoop Week1 Test",
+  "budget": {
+    "lifetime": 20.00,
+    "daily_cap": 2.86,
+    "currency": "USD"
+  },
+  "schedule": {
+    "start_date": "2024-12-10",
+    "end_date": "2024-12-17"
+  },
+  "objective": "OUTCOME_TRAFFIC",
+  "optimization_goal": "LINK_CLICKS",
+  "targeting": {
+    "locations": [
+      {"country": "US"},
+      {"country": "GB"},
+      {"country": "CA"},
+      {"country": "AU"}
+    ],
+    "age_min": 22,
+    "age_max": 45,
+    "genders": [0],
+    "interests": [
+      {"id": "6003139266461", "name": "Software development"},
+      {"id": "6003397425735", "name": "Web development"},
+      {"id": "6003020834693", "name": "Entrepreneurship"},
+      {"id": "6003384248805", "name": "Computer programming"},
+      {"id": "6003327847237", "name": "Startup company"}
+    ],
+    "behaviors": [
+      {"id": "6002714895372", "name": "Small business owners"}
+    ],
+    "job_titles": [
+      "Software Developer",
+      "Software Engineer",
+      "Web Developer",
+      "Full Stack Developer",
+      "Founder",
+      "CTO"
+    ],
+    "excluded_connections": [],
+    "placements": {
+      "facebook": ["feed"],
+      "instagram": ["feed"],
+      "exclude": ["audience_network", "messenger", "stories", "reels"]
+    }
+  },
+  "ad_sets": [
+    {
+      "name": "Developers - Feed Only",
+      "budget_optimization": "AD_SET",
+      "bid_strategy": "LOWEST_COST_WITHOUT_CAP"
+    }
+  ],
+  "ads": [
+    {
+      "id": "primary",
+      "name": "DevLoop - Primary",
+      "primary_text": "Solo developers: You're shipping bugs to production because testing is boring.\n\nDevLoop automates your QA:\n- Tests every API endpoint\n- Screenshots your UI at different sizes\n- AI checks for broken layouts\n- Alerts you on Slack when something breaks\n\nOne command to set up: npx create-devloop\n\nStart at $19/mo - less than your coffee habit.",
+      "headline": "AI-Powered QA for Indie Hackers",
+      "description": "Find bugs before your users do. Automated testing that actually works.",
+      "link": "https://devloop-landing.fly.dev?utm_source=facebook&utm_medium=paid&utm_campaign=week1_test&utm_content=primary",
+      "call_to_action": "LEARN_MORE",
+      "image": "devloop-hero.png"
+    },
+    {
+      "id": "problem_solution",
+      "name": "DevLoop - Problem/Solution",
+      "primary_text": "\"I'll test it later\" = bugs in production\n\nEvery indie hacker knows this pain. You ship fast, something breaks, users complain.\n\nDevLoop fixes this by testing automatically:\n- API smoke tests on every deploy\n- Visual regression detection\n- Production health monitoring\n- Auto-fix with AI\n\nTakes 2 minutes to set up. $19/mo.",
+      "headline": "Stop Shipping Bugs",
+      "description": "Automated QA that runs while you sleep. Built for developers who ship fast.",
+      "link": "https://devloop-landing.fly.dev?utm_source=facebook&utm_medium=paid&utm_campaign=week1_test&utm_content=problem_solution",
+      "call_to_action": "SIGN_UP",
+      "image": "devloop-dashboard.png"
+    }
+  ],
+  "pixel_id": "YOUR_PIXEL_ID",
+  "conversion_events": ["Purchase", "Lead", "CompleteRegistration"]
+}

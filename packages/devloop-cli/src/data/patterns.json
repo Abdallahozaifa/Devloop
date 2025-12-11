@@ -1,0 +1,473 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2024-12-10",
+
+  "frameworks": {
+    "fastapi": {
+      "name": "FastAPI",
+      "type": "backend",
+      "indicators": {
+        "files": ["main.py", "app/main.py", "requirements.txt"],
+        "imports": ["fastapi", "uvicorn", "starlette"],
+        "patterns": ["@app.get", "@app.post", "@router", "APIRouter", "FastAPI()"]
+      },
+      "structure": {
+        "common": ["app/", "routers/", "models/", "schemas/", "api/", "services/"],
+        "entryPoints": ["main.py", "app/main.py", "api/main.py"]
+      },
+      "apiPatterns": {
+        "basePaths": ["/api/v1", "/api", "/v1", ""],
+        "healthEndpoints": ["/health", "/healthz", "/api/health", "/api/v1/health"],
+        "docsEndpoints": ["/docs", "/redoc", "/openapi.json"]
+      },
+      "authPatterns": {
+        "indicators": ["OAuth2PasswordBearer", "jwt", "python-jose", "passlib"],
+        "endpoints": ["/auth/login", "/auth/register", "/auth/token", "/login", "/register"],
+        "tokenLocations": ["access_token", "token", "jwt", "data.access_token"]
+      },
+      "testPatterns": {
+        "frameworks": ["pytest", "unittest"],
+        "files": ["test_*.py", "*_test.py", "tests/"],
+        "fixtures": ["TestClient", "client", "test_client"]
+      }
+    },
+
+    "express": {
+      "name": "Express.js",
+      "type": "backend",
+      "indicators": {
+        "files": ["package.json", "server.js", "app.js", "index.js"],
+        "imports": ["express", "cors", "body-parser"],
+        "patterns": ["app.get", "app.post", "router.get", "express()"]
+      },
+      "structure": {
+        "common": ["routes/", "controllers/", "models/", "middleware/", "src/"],
+        "entryPoints": ["server.js", "app.js", "index.js", "src/index.js"]
+      },
+      "apiPatterns": {
+        "basePaths": ["/api/v1", "/api", "/v1", ""],
+        "healthEndpoints": ["/health", "/healthz", "/api/health"],
+        "docsEndpoints": ["/api-docs", "/swagger"]
+      },
+      "authPatterns": {
+        "indicators": ["passport", "jsonwebtoken", "bcrypt", "express-jwt"],
+        "endpoints": ["/auth/login", "/auth/register", "/api/login", "/api/register"],
+        "tokenLocations": ["token", "accessToken", "data.token"]
+      },
+      "testPatterns": {
+        "frameworks": ["jest", "mocha", "chai", "supertest"],
+        "files": ["*.test.js", "*.spec.js", "__tests__/"],
+        "fixtures": ["request(app)", "supertest"]
+      }
+    },
+
+    "django": {
+      "name": "Django",
+      "type": "backend",
+      "indicators": {
+        "files": ["manage.py", "settings.py", "urls.py", "wsgi.py"],
+        "imports": ["django", "rest_framework"],
+        "patterns": ["urlpatterns", "path(", "include(", "APIView"]
+      },
+      "structure": {
+        "common": ["apps/", "api/", "core/", "templates/", "static/"],
+        "entryPoints": ["manage.py", "wsgi.py", "asgi.py"]
+      },
+      "apiPatterns": {
+        "basePaths": ["/api/v1", "/api", ""],
+        "healthEndpoints": ["/health", "/api/health"],
+        "docsEndpoints": ["/api/docs", "/swagger"]
+      },
+      "authPatterns": {
+        "indicators": ["rest_framework.authtoken", "djangorestframework-simplejwt"],
+        "endpoints": ["/api/token", "/api/auth/login", "/auth/login"],
+        "tokenLocations": ["token", "access", "data.token"]
+      },
+      "testPatterns": {
+        "frameworks": ["pytest-django", "django.test"],
+        "files": ["test_*.py", "tests.py"],
+        "fixtures": ["APIClient", "Client"]
+      }
+    },
+
+    "nextjs": {
+      "name": "Next.js",
+      "type": "fullstack",
+      "indicators": {
+        "files": ["next.config.js", "next.config.mjs", "package.json"],
+        "imports": ["next", "next/router", "next/image"],
+        "patterns": ["getServerSideProps", "getStaticProps", "useRouter"]
+      },
+      "structure": {
+        "common": ["pages/", "app/", "components/", "lib/", "public/"],
+        "entryPoints": ["pages/_app.js", "app/layout.tsx", "pages/index.tsx"]
+      },
+      "apiPatterns": {
+        "basePaths": ["/api"],
+        "healthEndpoints": ["/api/health", "/api/healthz"],
+        "docsEndpoints": []
+      },
+      "authPatterns": {
+        "indicators": ["next-auth", "@auth/core", "getServerSession"],
+        "endpoints": ["/api/auth/signin", "/api/auth/callback"],
+        "tokenLocations": ["session", "token"]
+      },
+      "testPatterns": {
+        "frameworks": ["jest", "playwright", "cypress"],
+        "files": ["*.test.tsx", "*.spec.tsx", "__tests__/"],
+        "fixtures": ["render", "screen"]
+      }
+    },
+
+    "react": {
+      "name": "React",
+      "type": "frontend",
+      "indicators": {
+        "files": ["package.json", "vite.config.js", "vite.config.ts"],
+        "imports": ["react", "react-dom", "vite"],
+        "patterns": ["useState", "useEffect", "jsx", "tsx"]
+      },
+      "structure": {
+        "common": ["src/", "components/", "pages/", "hooks/", "utils/"],
+        "entryPoints": ["src/main.tsx", "src/index.tsx", "src/App.tsx"]
+      },
+      "apiPatterns": {
+        "basePaths": [],
+        "healthEndpoints": [],
+        "docsEndpoints": []
+      },
+      "authPatterns": {
+        "indicators": ["@auth0/auth0-react", "firebase/auth", "supabase"],
+        "endpoints": [],
+        "tokenLocations": []
+      },
+      "testPatterns": {
+        "frameworks": ["jest", "vitest", "testing-library"],
+        "files": ["*.test.tsx", "*.spec.tsx"],
+        "fixtures": ["render", "screen", "fireEvent"]
+      }
+    },
+
+    "vue": {
+      "name": "Vue.js",
+      "type": "frontend",
+      "indicators": {
+        "files": ["vue.config.js", "vite.config.ts", "nuxt.config.ts"],
+        "imports": ["vue", "nuxt", "pinia"],
+        "patterns": ["defineComponent", "setup()", "<script setup>"]
+      },
+      "structure": {
+        "common": ["src/", "components/", "views/", "stores/", "composables/"],
+        "entryPoints": ["src/main.ts", "src/App.vue"]
+      },
+      "apiPatterns": {
+        "basePaths": [],
+        "healthEndpoints": [],
+        "docsEndpoints": []
+      },
+      "authPatterns": {
+        "indicators": ["@auth0/auth0-vue", "firebase/auth"],
+        "endpoints": [],
+        "tokenLocations": []
+      },
+      "testPatterns": {
+        "frameworks": ["vitest", "jest", "cypress"],
+        "files": ["*.test.ts", "*.spec.ts"],
+        "fixtures": ["mount", "shallowMount"]
+      }
+    }
+  },
+
+  "hostingPlatforms": {
+    "fly.io": {
+      "name": "Fly.io",
+      "detection": {
+        "files": ["fly.toml"],
+        "configKey": "app"
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.fly.dev", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.fly.dev/api/v1", "type": "api", "priority": 1 },
+        { "template": "https://{app}.fly.dev/api", "type": "api", "priority": 2 },
+        { "template": "https://{app}-api.fly.dev", "type": "api", "priority": 3 },
+        { "template": "https://{app}-api.fly.dev/api/v1", "type": "api", "priority": 4 },
+        { "template": "https://{app}-backend.fly.dev", "type": "api", "priority": 5 },
+        { "template": "https://{app}-backend.fly.dev/api/v1", "type": "api", "priority": 6 },
+        { "template": "https://api.{app}.fly.dev", "type": "api", "priority": 7 }
+      ],
+      "healthEndpoints": ["/health", "/healthz", "/", "/api/health"]
+    },
+
+    "vercel": {
+      "name": "Vercel",
+      "detection": {
+        "files": ["vercel.json", ".vercel"],
+        "configKey": "name"
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.vercel.app", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.vercel.app/api", "type": "api", "priority": 1 },
+        { "template": "https://{app}-api.vercel.app", "type": "api", "priority": 2 }
+      ],
+      "healthEndpoints": ["/api/health", "/", "/api"]
+    },
+
+    "railway": {
+      "name": "Railway",
+      "detection": {
+        "files": ["railway.json", "railway.toml"],
+        "envVars": ["RAILWAY_STATIC_URL"]
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.up.railway.app", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.up.railway.app/api", "type": "api", "priority": 1 },
+        { "template": "https://{app}-api.up.railway.app", "type": "api", "priority": 2 }
+      ],
+      "healthEndpoints": ["/health", "/", "/api/health"]
+    },
+
+    "heroku": {
+      "name": "Heroku",
+      "detection": {
+        "files": ["Procfile", "app.json"],
+        "envVars": ["HEROKU_APP_NAME"]
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.herokuapp.com", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.herokuapp.com/api", "type": "api", "priority": 1 },
+        { "template": "https://{app}-api.herokuapp.com", "type": "api", "priority": 2 }
+      ],
+      "healthEndpoints": ["/health", "/", "/api/health"]
+    },
+
+    "render": {
+      "name": "Render",
+      "detection": {
+        "files": ["render.yaml"],
+        "envVars": ["RENDER_SERVICE_NAME"]
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.onrender.com", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.onrender.com/api", "type": "api", "priority": 1 },
+        { "template": "https://{app}-api.onrender.com", "type": "api", "priority": 2 }
+      ],
+      "healthEndpoints": ["/health", "/healthz", "/"]
+    },
+
+    "netlify": {
+      "name": "Netlify",
+      "detection": {
+        "files": ["netlify.toml"],
+        "envVars": ["NETLIFY"]
+      },
+      "urlPatterns": [
+        { "template": "https://{app}.netlify.app", "type": "frontend", "priority": 1 },
+        { "template": "https://{app}.netlify.app/.netlify/functions", "type": "api", "priority": 1 }
+      ],
+      "healthEndpoints": ["/", "/.netlify/functions/health"]
+    },
+
+    "aws-amplify": {
+      "name": "AWS Amplify",
+      "detection": {
+        "files": ["amplify.yml", "amplify/"],
+        "envVars": ["AWS_APP_ID"]
+      },
+      "urlPatterns": [
+        { "template": "https://{branch}.{appId}.amplifyapp.com", "type": "frontend", "priority": 1 }
+      ],
+      "healthEndpoints": ["/", "/api/health"]
+    }
+  },
+
+  "commonBugs": {
+    "cors": {
+      "name": "CORS Error",
+      "symptoms": ["CORS", "Access-Control-Allow-Origin", "blocked by CORS", "No 'Access-Control-Allow-Origin'"],
+      "statusCodes": [0],
+      "causes": [
+        "Missing CORS middleware",
+        "Wrong allowed origins",
+        "Missing credentials support",
+        "Preflight OPTIONS not handled"
+      ],
+      "fixes": [
+        "Add CORS middleware with appropriate origins",
+        "Enable credentials if using cookies/auth headers",
+        "Handle OPTIONS preflight requests",
+        "Check that API URL is correct (not hitting wrong server)"
+      ],
+      "codeHints": {
+        "fastapi": "app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True)",
+        "express": "app.use(cors({ origin: true, credentials: true }))"
+      }
+    },
+
+    "auth401": {
+      "name": "Unauthorized",
+      "symptoms": ["401", "Unauthorized", "token expired", "invalid token", "jwt"],
+      "statusCodes": [401],
+      "causes": [
+        "Token expired",
+        "Invalid token format",
+        "Missing Authorization header",
+        "Wrong token type (Bearer vs Basic)"
+      ],
+      "fixes": [
+        "Refresh the access token",
+        "Re-authenticate the user",
+        "Check Authorization header format",
+        "Verify token signing key matches"
+      ],
+      "codeHints": {
+        "fastapi": "Check OAuth2PasswordBearer and jwt.decode() configuration",
+        "express": "Check passport/jwt middleware configuration"
+      }
+    },
+
+    "auth403": {
+      "name": "Forbidden",
+      "symptoms": ["403", "Forbidden", "permission denied", "not authorized"],
+      "statusCodes": [403],
+      "causes": [
+        "User lacks required permissions",
+        "Resource ownership mismatch",
+        "Role-based access denied",
+        "IP/rate limiting"
+      ],
+      "fixes": [
+        "Check user roles and permissions",
+        "Verify resource ownership",
+        "Check rate limiting settings",
+        "Review access control logic"
+      ],
+      "codeHints": {}
+    },
+
+    "notFound404": {
+      "name": "Not Found",
+      "symptoms": ["404", "Not Found", "route not found", "endpoint not found"],
+      "statusCodes": [404],
+      "causes": [
+        "Wrong API base path",
+        "Route not registered",
+        "Typo in endpoint path",
+        "Missing router include"
+      ],
+      "fixes": [
+        "Check API base path (e.g., /api/v1)",
+        "Verify route is registered",
+        "Check for typos in path",
+        "Ensure router is included in app"
+      ],
+      "codeHints": {
+        "fastapi": "Check app.include_router() calls in main.py",
+        "express": "Check app.use() router mounting"
+      }
+    },
+
+    "methodNotAllowed405": {
+      "name": "Method Not Allowed",
+      "symptoms": ["405", "Method Not Allowed", "method not supported"],
+      "statusCodes": [405],
+      "causes": [
+        "Wrong HTTP method used",
+        "Route exists but not for this method",
+        "API expects different method",
+        "Wrong API base path causing route mismatch"
+      ],
+      "fixes": [
+        "Check correct HTTP method (GET/POST/PUT/DELETE)",
+        "Verify API documentation",
+        "Check if endpoint requires authentication",
+        "Verify API base path is correct"
+      ],
+      "codeHints": {}
+    },
+
+    "serverError500": {
+      "name": "Internal Server Error",
+      "symptoms": ["500", "Internal Server Error", "server error", "unhandled exception"],
+      "statusCodes": [500],
+      "causes": [
+        "Unhandled exception in code",
+        "Database connection failed",
+        "Missing environment variable",
+        "Null reference / undefined access"
+      ],
+      "fixes": [
+        "Check server logs for stack trace",
+        "Verify database connectivity",
+        "Check all required env vars are set",
+        "Add proper error handling"
+      ],
+      "codeHints": {}
+    },
+
+    "connectionRefused": {
+      "name": "Connection Refused",
+      "symptoms": ["ECONNREFUSED", "connection refused", "fetch failed", "network error"],
+      "statusCodes": [],
+      "causes": [
+        "Server not running",
+        "Wrong port",
+        "Wrong hostname/IP",
+        "Firewall blocking",
+        "DNS resolution failed"
+      ],
+      "fixes": [
+        "Verify server is running",
+        "Check correct port number",
+        "Verify hostname/URL is correct",
+        "Check firewall settings",
+        "Test DNS resolution"
+      ],
+      "codeHints": {}
+    },
+
+    "timeout": {
+      "name": "Request Timeout",
+      "symptoms": ["timeout", "ETIMEDOUT", "request timed out", "deadline exceeded"],
+      "statusCodes": [408, 504],
+      "causes": [
+        "Server too slow to respond",
+        "Network connectivity issues",
+        "Server overloaded",
+        "Long-running operation without async"
+      ],
+      "fixes": [
+        "Increase timeout setting",
+        "Check network connectivity",
+        "Optimize slow endpoints",
+        "Add pagination/streaming for large data"
+      ],
+      "codeHints": {}
+    }
+  },
+
+  "testEndpoints": {
+    "health": ["/health", "/healthz", "/api/health", "/api/v1/health", "/_health"],
+    "docs": ["/docs", "/redoc", "/swagger", "/api-docs", "/openapi.json"],
+    "root": ["/", "/api", "/api/v1"],
+    "auth": ["/auth/login", "/auth/register", "/api/auth/login", "/login", "/register"]
+  },
+
+  "responsePatterns": {
+    "success": {
+      "statusCodes": [200, 201, 204],
+      "bodyIndicators": ["success", "ok", "data"]
+    },
+    "authRequired": {
+      "statusCodes": [401, 403],
+      "bodyIndicators": ["unauthorized", "forbidden", "token", "authentication"]
+    },
+    "clientError": {
+      "statusCodes": [400, 404, 405, 422],
+      "bodyIndicators": ["error", "invalid", "not found", "validation"]
+    },
+    "serverError": {
+      "statusCodes": [500, 502, 503, 504],
+      "bodyIndicators": ["error", "exception", "internal"]
+    }
+  }
+}

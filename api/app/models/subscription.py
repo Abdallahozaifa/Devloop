@@ -15,10 +15,10 @@ if TYPE_CHECKING:
 
 class PlanType(str, enum.Enum):
     """Subscription plan types."""
-    FREE = "free"      # Free - 1 project, limited runs
-    SOLO = "solo"      # $19/mo - 1 project
-    PRO = "pro"        # $39/mo - 5 projects
-    TEAM = "team"      # $79/mo - Unlimited
+    FREE = "free"      # Free - 1 project, 5 runs/day (hard limit)
+    SOLO = "solo"      # Legacy - kept for DB compatibility
+    PRO = "pro"        # $39/mo - 5 projects, 30 runs/day (soft throttle)
+    TEAM = "team"      # $79/mo - 15 projects, 50 runs/day (soft throttle)
 
     def __str__(self):
         return self.value
@@ -125,13 +125,28 @@ class Subscription(Base):
     def max_projects(self) -> int:
         """Maximum projects allowed for this plan."""
         if self.plan == PlanType.TEAM:
-            return 999
+            return 15
         elif self.plan == PlanType.PRO:
             return 5
         elif self.plan == PlanType.SOLO:
-            return 1
+            return 5  # Legacy - treat as Pro
         else:  # FREE
             return 1
+
+    @property
+    def daily_run_limit(self) -> int:
+        """Daily QA run limit for this plan."""
+        if self.plan == PlanType.TEAM:
+            return 50
+        elif self.plan in (PlanType.PRO, PlanType.SOLO):
+            return 30
+        else:  # FREE
+            return 5
+
+    @property
+    def is_hard_limit(self) -> bool:
+        """Whether the limit is a hard block (True) or soft throttle (False)."""
+        return self.plan == PlanType.FREE
 
     def __repr__(self):
         return f"<Subscription {self.user_id} - {self.plan.value}>"

@@ -1,8 +1,8 @@
 # DevLoop
 
-**Ship faster. Break nothing.**
+**The last mile of AI coding.**
 
-Autonomous QA that finds bugs, fixes them, and verifies the fix. Built for indie hackers who ship fast.
+AI writes your code. DevLoop ships it. Describe what you want in plain English, get it working in production.
 
 ## Pricing
 
@@ -13,23 +13,23 @@ Autonomous QA that finds bugs, fixes them, and verifies the fix. Built for indie
 | Team | $79/mo | Unlimited |
 
 All plans include:
-- Unlimited QA runs
-- AI Vision checks
-- Auto-fix with Claude CLI
+- Unlimited builds
+- Full development loop (build → test → deploy → verify)
 - Dashboard access
 
 **[Get Started](https://devloop.dev)**
 
 ## What is DevLoop?
 
-DevLoop is a QA automation toolkit that integrates with Claude CLI to provide:
+DevLoop completes what AI coding tools like Copilot and Cursor start. While they help you write code, DevLoop actually ships it.
 
-- **Auto-discovery** - Automatically discovers your API endpoints and UI routes
-- **API Testing** - Tests every endpoint with authentication, validates responses
-- **UI Screenshots** - Captures screenshots at multiple viewports with Playwright
-- **AI Vision** - Claude analyzes screenshots to verify UI looks correct
-- **Auto-Fix Loop** - When tests fail, Claude CLI analyzes and fixes automatically
-- **Verification** - Re-runs tests after fixes and generates detailed reports
+**The Autonomous Development Loop:**
+1. **Describe** - Tell DevLoop what you want in plain English
+2. **Build** - AI understands your codebase and generates the implementation
+3. **Test** - Automatically writes and runs tests
+4. **Deploy** - Ships to production
+5. **Verify** - Confirms everything works in production
+6. **Fix** - If anything breaks, DevLoop debugs and fixes it
 
 ## Quick Start
 
@@ -40,126 +40,98 @@ npx create-devloop
 # Enter your license key (get one at devloop.dev)
 # DL-XXXX-XXXX-XXXX
 
-# Run smoke test
-./scripts/qa.sh smoke
+# Describe what you want to build
+devloop build 'add stripe checkout'
 
-# Run full QA suite
-./scripts/qa.sh all
-
-# Auto-fix any failures
-./scripts/qa-fix.sh
+# Or run the full loop
+./scripts/devloop.sh build 'add user authentication'
 ```
 
 ## What Gets Created
 
 ```
 your-project/
-├── .claude/
-│   ├── INSTRUCTIONS.md    # Project conventions for AI
-│   ├── features.md        # Feature list for testing
-│   ├── test-accounts.md   # Test credentials
-│   ├── task.md            # Current task description
-│   └── qa/                # QA results and screenshots
+├── .devloop/
+│   ├── config.md         # Project conventions for AI
+│   ├── features.md       # Feature list
+│   ├── task.md           # Current task description
+│   └── builds/           # Build results and logs
 ├── scripts/
-│   ├── qa.sh              # Main QA orchestrator
-│   ├── qa-api.sh          # API endpoint tests
-│   ├── qa-ui.sh           # UI screenshot tests
-│   ├── qa-fix.sh          # Auto-fix loop
-│   ├── quick.sh           # Quick commands
-│   ├── context.sh         # Generate codebase context
-│   └── ai.sh              # Claude CLI wrapper
-└── .cursorrules           # AI coding guidelines
+│   ├── devloop.sh        # Main orchestrator
+│   ├── build.sh          # Build command
+│   ├── test.sh           # Test runner
+│   ├── deploy.sh         # Deployment
+│   └── verify.sh         # Production verification
+└── .devloop.json         # DevLoop configuration
 ```
 
 ## Commands
 
-### Quick Commands
+### Build Commands
 
 ```bash
-./scripts/quick.sh smoke      # Quick health check
-./scripts/quick.sh qa         # Full QA suite
-./scripts/quick.sh qa-api     # API tests only
-./scripts/quick.sh qa-ui      # UI tests only
-./scripts/quick.sh qa-fix     # Auto-fix failures
-./scripts/quick.sh qa-report  # Generate report
+devloop build 'add stripe checkout'      # Build a feature
+devloop build 'fix login bug'            # Fix a bug
+devloop build 'add dark mode toggle'     # Add UI feature
 ```
 
 ### Direct Scripts
 
 ```bash
-./scripts/qa.sh smoke         # Quick smoke test
-./scripts/qa.sh api           # API tests
-./scripts/qa.sh ui            # UI tests
-./scripts/qa.sh all           # Full suite
-./scripts/qa.sh report        # Generate report
-./scripts/qa-fix.sh           # Auto-fix loop
+./scripts/devloop.sh build 'description'  # Full build loop
+./scripts/devloop.sh test                 # Run tests
+./scripts/devloop.sh deploy               # Deploy to production
+./scripts/devloop.sh verify               # Verify production
+./scripts/devloop.sh status               # Check project status
 ```
 
-## Configuration
+## How DevLoop Works
 
-### Environment Variables
+### 1. Understands Your Codebase
+DevLoop scans your project to understand:
+- Your tech stack (React, Node, Python, etc.)
+- Your code patterns and conventions
+- Existing features and architecture
 
-```bash
-# License (set automatically by create-devloop)
-DEVLOOP_LICENSE_KEY=DL-XXXX-XXXX-XXXX
+### 2. Generates Complete Features
+When you describe what you want:
+- Plans the implementation
+- Writes production-ready code
+- Creates necessary components, routes, and APIs
 
-# Required
-DEVLOOP_API_URL=https://your-api.example.com/api
-DEVLOOP_APP_URL=https://your-app.example.com
+### 3. Tests Everything
+Automatically:
+- Writes unit and integration tests
+- Runs your existing test suite
+- Validates the implementation works
 
-# For authenticated tests
-QA_EMAIL=qa@example.com
-QA_PASSWORD=your-test-password
+### 4. Ships to Production
+DevLoop handles deployment:
+- Commits changes to your repo
+- Creates PRs for review (optional)
+- Deploys to your production environment
 
-# For AI vision checks (optional)
-ANTHROPIC_API_KEY=sk-ant-...
-```
+### 5. Verifies It Works
+After deployment:
+- Runs smoke tests against production
+- Validates endpoints are responding
+- Captures screenshots of UI changes
+- Alerts you if anything is broken
 
-### Project Setup
-
-1. **Edit `.claude/INSTRUCTIONS.md`** - Configure your tech stack and conventions
-2. **Edit `.claude/features.md`** - List your routes and API endpoints
-3. **Edit `.claude/test-accounts.md`** - Add test credentials
-
-## How It Works
-
-### 1. License Verification
-
-The CLI verifies your license on each run:
-- Checks against the DevLoop API
-- Caches verification for 24 hours
-- Works offline with cached verification
-
-### 2. API Testing (`qa-api.sh`)
-
-- Tests each endpoint defined in `features.md`
-- Handles authentication automatically
-- Validates response codes
-- Checks protected endpoints reject unauthenticated requests
-
-### 3. UI Testing (`qa-ui.sh`)
-
-- Uses Playwright to capture screenshots
-- Supports desktop, mobile, and tablet viewports
-- Optionally uses Claude Vision to analyze screenshots
-- Detects broken layouts and missing elements
-
-### 4. Auto-Fix Loop (`qa-fix.sh`)
-
-- Collects failures from QA results
-- Creates a task for Claude CLI
-- Claude analyzes failures and makes fixes
-- Re-runs tests to verify
-- Loops until all tests pass (max 3 attempts)
+### 6. Fixes What Breaks
+If verification fails:
+- Analyzes the failure
+- Generates a fix
+- Re-runs the loop until it works
 
 ## Dashboard
 
 Your license includes access to the DevLoop dashboard at [devloop.dev/dashboard](https://devloop.dev/dashboard):
 
-- View your license key
+- View build history
 - Manage projects
-- Track QA run history
-- See pass/fail statistics
+- Track success/failure rates
+- Configure notifications
 - Manage billing
 
 ## CI/CD Integration
@@ -172,11 +144,11 @@ env:
   DEVLOOP_LICENSE_KEY: ${{ secrets.DEVLOOP_LICENSE_KEY }}
 
 steps:
-  - name: Run DevLoop QA
-    run: ./scripts/qa.sh all
+  - name: Run DevLoop
+    run: devloop build 'deploy latest changes'
 ```
 
-## Project Structure
+## Supported Stacks
 
 DevLoop adapts to your project structure. It works with:
 
@@ -196,24 +168,23 @@ npx create-devloop
 # DL-XXXX-XXXX-XXXX
 
 # 3. Configure your project
-vim .claude/INSTRUCTIONS.md
-vim .claude/features.md
+vim .devloop/config.md
 
-# 4. Set environment variables
-export DEVLOOP_API_URL="http://localhost:3000/api"
-export DEVLOOP_APP_URL="http://localhost:3000"
+# 4. Describe what you want
+devloop build 'add user profile page with avatar upload'
 
-# 5. Run smoke test
-./scripts/qa.sh smoke
+# 5. Watch DevLoop work
+# > Understanding codebase...
+# > Planning implementation...
+# > Generating components...
+# > Writing tests...
+# > Running tests... 5/5 passed
+# > Deploying to production...
+# > Verifying... all checks passed
+# > Feature shipped in 47s
 
-# 6. Run full QA suite
-./scripts/qa.sh all
-
-# 7. Auto-fix any failures
-./scripts/qa-fix.sh
-
-# 8. Check the report
-cat .claude/qa/qa-report-*.md
+# 6. Check the result
+open https://yourapp.com/profile
 ```
 
 ## Support

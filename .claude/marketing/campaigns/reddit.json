@@ -1,0 +1,66 @@
+{
+  "platform": "reddit",
+  "campaign_name": "DevLoop Week1 Test",
+  "budget": {
+    "lifetime": 25.00,
+    "daily_cap": 3.57,
+    "currency": "USD"
+  },
+  "schedule": {
+    "start_date": "2024-12-10",
+    "end_date": "2024-12-17"
+  },
+  "objective": "conversions",
+  "targeting": {
+    "subreddits": [
+      "r/SaaS",
+      "r/webdev",
+      "r/indiehackers",
+      "r/startups",
+      "r/programming",
+      "r/reactjs",
+      "r/nextjs",
+      "r/node",
+      "r/Python",
+      "r/devops"
+    ],
+    "interests": [
+      "Technology",
+      "Business and Finance",
+      "Programming"
+    ],
+    "locations": ["United States", "United Kingdom", "Canada", "Australia", "Germany"],
+    "device": ["desktop", "mobile"]
+  },
+  "ads": [
+    {
+      "id": "saas",
+      "headline": "AI-powered QA for indie hackers - $19/mo",
+      "body": "Stop shipping bugs to production. DevLoop automatically tests your APIs, captures UI screenshots, and alerts you on Slack when something breaks. One command setup: npx create-devloop",
+      "url": "https://devloop-landing.fly.dev?utm_source=reddit&utm_medium=paid&utm_campaign=week1_test&utm_content=saas",
+      "thumbnail": "devloop-terminal.png",
+      "cta": "Learn More"
+    },
+    {
+      "id": "webdev",
+      "headline": "Automated testing that actually works for small projects",
+      "body": "Built for developers who ship fast. API smoke tests, visual regression, production monitoring. Works with any stack. Takes 2 minutes to set up.",
+      "url": "https://devloop-landing.fly.dev?utm_source=reddit&utm_medium=paid&utm_campaign=week1_test&utm_content=webdev",
+      "thumbnail": "devloop-dashboard.png",
+      "cta": "Try Free"
+    },
+    {
+      "id": "indiehackers",
+      "headline": "How I automated QA for my SaaS with one command",
+      "body": "Tired of manual testing? DevLoop runs your QA automatically - API tests, screenshots, health checks. Built for solo devs. $19/mo.",
+      "url": "https://devloop-landing.fly.dev?utm_source=reddit&utm_medium=paid&utm_campaign=week1_test&utm_content=indiehackers",
+      "thumbnail": "devloop-results.png",
+      "cta": "Get Started"
+    }
+  ],
+  "bidding": {
+    "type": "CPC",
+    "bid": 0.75,
+    "max_bid": 1.50
+  }
+}

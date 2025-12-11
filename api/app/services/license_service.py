@@ -9,6 +9,7 @@ from app.core.security import generate_license_key, sign_license_key
 from app.models.user import User
 from app.models.license import License, LicenseStatus
 from app.models.subscription import Subscription
+from app.services.throttling_service import ThrottlingService
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,9 @@ class LicenseService:
             license.machine_id = machine_id
         await db.commit()
 
+        # Get throttle status
+        throttle = await ThrottlingService.check_throttle(db, user)
+
         return {
             "valid": True,
             "status": "valid",
@@ -135,6 +139,15 @@ class LicenseService:
             "plan": subscription.plan.value if subscription else None,
             "expires_at": subscription.current_period_end if subscription else None,
             "message": "License is valid",
+            # Throttle info for CLI
+            "throttle": {
+                "allowed": throttle.allowed,
+                "runs_used": throttle.runs_used,
+                "runs_limit": throttle.runs_limit,
+                "is_hard_limit": throttle.is_hard_limit,
+                "delay_seconds": throttle.delay_seconds,
+                "throttle_message": throttle.message,
+            }
         }
 
     @staticmethod

@@ -1,7 +1,7 @@
 {
   "name": "create-devloop",
-  "version": "0.2.0",
-  "description": "Autonomous QA scaffolding with live production testing - finds bugs, fixes them, verifies the fix",
+  "version": "0.3.0",
+  "description": "The last mile of AI coding - describe what you want, DevLoop builds it, tests it, deploys it, and verifies it works",
   "type": "module",
   "bin": {
     "create-devloop": "./bin/create-devloop.js"
@@ -15,17 +15,18 @@
     "test": "node bin/create-devloop.js --help"
   },
   "keywords": [
-    "qa",
-    "testing",
-    "automation",
     "ai",
+    "automation",
+    "autonomous",
+    "build",
+    "ci",
+    "deploy",
     "devloop",
     "devops",
-    "ci",
-    "production-testing",
-    "health-check",
-    "smoke-test",
-    "monitoring"
+    "development",
+    "ship",
+    "test",
+    "verify"
   ],
   "author": "",
   "license": "MIT",

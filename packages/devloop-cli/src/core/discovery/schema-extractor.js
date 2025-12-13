@@ -1,10 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
+import { getExtractor, detectFramework } from '../../extractors/index.js';
 
 /**
  * Extracts API schema from various sources
  * Supports: OpenAPI, FastAPI, Express routes, Django URLs, etc.
+ *
+ * Delegates to framework-specific extractors when available,
+ * falls back to built-in extraction for other frameworks.
  */
 export async function extractSchema(projectRoot, framework) {
   const result = {
@@ -19,24 +23,64 @@ export async function extractSchema(projectRoot, framework) {
     return openApiResult;
   }
 
-  // Fall back to framework-specific extraction
-  const backendFramework = framework?.backend;
+  // Determine backend framework
+  const backendFramework = framework?.backend || (await detectFramework(projectRoot));
 
-  if (backendFramework === 'fastapi') {
-    return await extractFromFastAPI(projectRoot);
-  } else if (backendFramework === 'express' || backendFramework === 'fastify') {
+  // Try to use the new extractor system
+  const extractor = await getExtractor(projectRoot, backendFramework);
+
+  if (extractor) {
+    // Use the new extractor system
+    const routes = await extractor.discoverRoutes();
+    const schemas = await extractor.extractSchemas();
+
+    result.endpoints = routes.map((route) => ({
+      method: route.method,
+      path: route.path,
+      file: route.file,
+      auth: route.authType !== null && route.authType !== 'none',
+      operationId: route.funcName,
+      parameters: extractPathParams(route.path),
+      requestBody: route.requestSchema?.modelName
+        ? { schema: { $ref: route.requestSchema.modelName } }
+        : null,
+      returns: route.responseInfo?.model || null,
+    }));
+
+    // Convert schemas to expected format
+    for (const [name, schema] of Object.entries(schemas)) {
+      result.schemas[name] = {
+        type: 'object',
+        properties: [
+          ...schema.requiredFields.map((f) => ({
+            name: f.name,
+            type: f.type,
+            required: true,
+          })),
+          ...schema.optionalFields.map((f) => ({
+            name: f.name,
+            type: f.type,
+            required: false,
+          })),
+        ],
+      };
+    }
+
+    return result;
+  }
+
+  // Fall back to built-in framework-specific extraction for unsupported frameworks
+  if (backendFramework === 'express' || backendFramework === 'fastify') {
     return await extractFromExpress(projectRoot);
   } else if (backendFramework === 'django') {
     return await extractFromDjango(projectRoot);
   }
 
-  // Generic Python extraction
-  if (framework?.language?.backend === 'python') {
-    return await extractFromFastAPI(projectRoot);
-  }
-
   // Generic Node extraction
-  if (framework?.language?.backend === 'javascript' || framework?.language?.backend === 'typescript') {
+  if (
+    framework?.language?.backend === 'javascript' ||
+    framework?.language?.backend === 'typescript'
+  ) {
     return await extractFromExpress(projectRoot);
   }
 
@@ -136,7 +180,7 @@ function hasSecurityRequirement(operation, spec) {
 function extractParameters(operation) {
   if (!operation.parameters) return [];
 
-  return operation.parameters.map(param => ({
+  return operation.parameters.map((param) => ({
     name: param.name,
     in: param.in,
     required: param.required || false,
@@ -189,142 +233,6 @@ function resolveSchemaRef(schema) {
   return schema;
 }
 
-async function extractFromFastAPI(projectRoot) {
-  const result = {
-    endpoints: [],
-    schemas: {},
-    basePath: '/api/v1',
-  };
-
-  // Find Python API files
-  const apiPaths = [
-    'app/api/**/*.py',
-    'api/app/api/**/*.py',
-    'backend/app/api/**/*.py',
-    'src/api/**/*.py',
-    '**/routers/**/*.py',
-    '**/endpoints/**/*.py',
-  ];
-
-  const processedFiles = new Set();
-
-  for (const pattern of apiPaths) {
-    const files = await glob(pattern, {
-      cwd: projectRoot,
-      ignore: ['**/test_*', '**/__pycache__/**', '**/*_test.py'],
-    });
-
-    for (const file of files) {
-      if (processedFiles.has(file)) continue;
-      processedFiles.add(file);
-
-      const filePath = path.join(projectRoot, file);
-      const content = fs.readFileSync(filePath, 'utf8');
-
-      // Extract router prefix
-      const prefixMatch = content.match(/prefix\s*=\s*['"](\/[^'"]+)['"]/);
-      const routerPrefix = prefixMatch ? prefixMatch[1] : '';
-
-      // Extract endpoints
-      const decoratorRegex = /@(?:router|app)\.(get|post|put|patch|delete)\s*\(\s*['"]([^'"]+)['"]/gi;
-      let match;
-
-      while ((match = decoratorRegex.exec(content)) !== null) {
-        const method = match[1].toUpperCase();
-        const endpointPath = match[2];
-        const fullPath = routerPrefix + endpointPath;
-
-        // Try to extract function info
-        const funcInfo = extractPythonFunctionInfo(content, match.index);
-
-        // Determine if auth is required
-        const hasAuth = checkFastAPIAuth(content, match.index);
-
-        // Extract path parameters
-        const pathParams = extractPathParams(endpointPath);
-
-        result.endpoints.push({
-          method,
-          path: fullPath,
-          file,
-          auth: hasAuth,
-          operationId: funcInfo.name,
-          summary: funcInfo.docstring,
-          parameters: pathParams,
-          requestBody: funcInfo.requestBody,
-          returns: funcInfo.returns,
-        });
-      }
-
-      // Extract Pydantic schemas
-      const schemaMatches = content.matchAll(/class\s+(\w+)\s*\((?:BaseModel|Schema|SQLModel)[^)]*\):\s*([^]*?)(?=\nclass\s|\n@|\Z)/g);
-      for (const schemaMatch of schemaMatches) {
-        const schemaName = schemaMatch[1];
-        const schemaBody = schemaMatch[2];
-
-        result.schemas[schemaName] = extractPydanticFields(schemaBody);
-      }
-    }
-  }
-
-  return result;
-}
-
-function extractPythonFunctionInfo(content, decoratorIndex) {
-  const result = {
-    name: null,
-    docstring: null,
-    requestBody: null,
-    returns: null,
-  };
-
-  // Find the function definition after the decorator
-  const afterDecorator = content.slice(decoratorIndex);
-  const funcMatch = afterDecorator.match(/(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)/);
-
-  if (funcMatch) {
-    result.name = funcMatch[1];
-    const params = funcMatch[2];
-
-    // Look for request body schema
-    const bodyMatch = params.match(/(\w+)\s*:\s*(\w+(?:Schema|Request|Create|Update|Input))/);
-    if (bodyMatch) {
-      result.requestBody = { schema: { $ref: bodyMatch[2] } };
-    }
-
-    // Look for return type
-    const returnMatch = afterDecorator.match(/def\s+\w+[^)]+\)\s*->\s*(\w+)/);
-    if (returnMatch) {
-      result.returns = returnMatch[1];
-    }
-
-    // Extract docstring
-    const docMatch = afterDecorator.match(/def\s+\w+[^:]+:\s*"""([^"]+)"""/);
-    if (docMatch) {
-      result.docstring = docMatch[1].trim();
-    }
-  }
-
-  return result;
-}
-
-function checkFastAPIAuth(content, position) {
-  // Look backwards for Depends with auth
-  const before = content.slice(Math.max(0, position - 500), position);
-  if (before.includes('get_current_user') || before.includes('Depends(') && before.includes('auth')) {
-    return true;
-  }
-
-  // Look in function params
-  const after = content.slice(position, position + 500);
-  const funcMatch = after.match(/def\s+\w+\s*\([^)]+\)/);
-  if (funcMatch && (funcMatch[0].includes('current_user') || funcMatch[0].includes('get_current_user'))) {
-    return true;
-  }
-
-  return false;
-}
-
 function extractPathParams(pathStr) {
   const params = [];
   const paramRegex = /\{(\w+)\}/g;
@@ -340,41 +248,6 @@ function extractPathParams(pathStr) {
   }
 
   return params;
-}
-
-function extractPydanticFields(schemaBody) {
-  const fields = [];
-  const fieldRegex = /(\w+)\s*:\s*(?:Optional\[)?(\w+)(?:\])?\s*(?:=\s*([^,\n]+))?/g;
-  let match;
-
-  while ((match = fieldRegex.exec(schemaBody)) !== null) {
-    const fieldName = match[1];
-    let fieldType = match[2];
-    const defaultValue = match[3];
-
-    // Convert Python types to JSON schema types
-    const typeMap = {
-      str: 'string',
-      int: 'integer',
-      float: 'number',
-      bool: 'boolean',
-      UUID: 'uuid',
-      datetime: 'datetime',
-      date: 'date',
-      EmailStr: 'email',
-      HttpUrl: 'url',
-      List: 'array',
-      Dict: 'object',
-    };
-
-    fields.push({
-      name: fieldName,
-      type: typeMap[fieldType] || fieldType.toLowerCase(),
-      required: !defaultValue && !match[0].includes('Optional'),
-    });
-  }
-
-  return { type: 'object', properties: fields };
 }
 
 async function extractFromExpress(projectRoot) {
@@ -406,7 +279,8 @@ async function extractFromExpress(projectRoot) {
       const basePath = extractExpressBasePath(file, content);
 
       // Extract routes
-      const routeRegex = /(?:router|app)\.(get|post|put|patch|delete)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
+      const routeRegex =
+        /(?:router|app)\.(get|post|put|patch|delete)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
       let match;
 
       while ((match = routeRegex.exec(content)) !== null) {
@@ -453,11 +327,13 @@ function extractExpressBasePath(file, content) {
 function checkExpressAuth(content, position) {
   // Look for auth middleware in the route handler
   const routeLine = content.slice(position, position + 300);
-  return routeLine.includes('authenticate') ||
+  return (
+    routeLine.includes('authenticate') ||
     routeLine.includes('auth') ||
     routeLine.includes('protect') ||
     routeLine.includes('requireAuth') ||
-    routeLine.includes('isAuthenticated');
+    routeLine.includes('isAuthenticated')
+  );
 }
 
 function extractExpressPathParams(routePath) {
@@ -484,10 +360,7 @@ async function extractFromDjango(projectRoot) {
     basePath: '/api',
   };
 
-  const urlPaths = [
-    '**/urls.py',
-    '**/api/**/urls.py',
-  ];
+  const urlPaths = ['**/urls.py', '**/api/**/urls.py'];
 
   for (const pattern of urlPaths) {
     const files = await glob(pattern, {
@@ -500,7 +373,8 @@ async function extractFromDjango(projectRoot) {
       const content = fs.readFileSync(filePath, 'utf8');
 
       // Extract Django URL patterns
-      const urlRegex = /path\s*\(\s*['"]([^'"]+)['"]\s*,\s*(\w+)(?:\.as_view\(\))?\s*(?:,\s*name\s*=\s*['"](\w+)['"])?\)/g;
+      const urlRegex =
+        /path\s*\(\s*['"]([^'"]+)['"]\s*,\s*(\w+)(?:\.as_view\(\))?\s*(?:,\s*name\s*=\s*['"](\w+)['"])?\)/g;
       let match;
 
       while ((match = urlRegex.exec(content)) !== null) {
@@ -539,7 +413,7 @@ function parseSimpleYaml(content) {
   // For production, use a proper YAML parser
   try {
     // Remove comments
-    const lines = content.split('\n').filter(line => !line.trim().startsWith('#'));
+    const lines = content.split('\n').filter((line) => !line.trim().startsWith('#'));
 
     // This is a placeholder - in production use js-yaml
     return JSON.parse(JSON.stringify({}));

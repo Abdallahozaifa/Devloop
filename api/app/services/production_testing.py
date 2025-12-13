@@ -91,6 +91,227 @@ class ProductionTestingService:
                 "error": str(e)
             }
 
+    async def run_connection_stability_test(
+        self,
+        project: Project,
+        num_requests: int = 10,
+        delay_between_requests: float = 0.2
+    ) -> Dict[str, Any]:
+        """
+        Run a connection stability test against the project's production API.
+
+        This test makes multiple rapid requests to detect database connection
+        issues like "connection was closed in the middle of operation" errors
+        that can occur with Fly.io PostgreSQL proxy when using connection pooling.
+
+        Args:
+            project: The project to test
+            num_requests: Number of requests to make (default: 10)
+            delay_between_requests: Seconds to wait between requests (default: 0.2)
+
+        Returns:
+            Dict with success_count, failure_count, results, and overall pass/fail
+        """
+        if not project.production_api_url:
+            return {
+                "passed": False,
+                "success_count": 0,
+                "failure_count": 0,
+                "total_requests": 0,
+                "results": [],
+                "error": "No production API URL configured"
+            }
+
+        base_url = project.production_api_url.rstrip('/')
+        endpoint = project.health_check_endpoint or "/health"
+        url = f"{base_url}{endpoint}"
+
+        results = []
+        success_count = 0
+        failure_count = 0
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for i in range(num_requests):
+                start_time = time.time()
+                try:
+                    response = await client.get(url)
+                    response_time_ms = int((time.time() - start_time) * 1000)
+
+                    passed = response.status_code == 200
+                    if passed:
+                        success_count += 1
+                    else:
+                        failure_count += 1
+
+                    results.append({
+                        "request_number": i + 1,
+                        "status_code": response.status_code,
+                        "response_time_ms": response_time_ms,
+                        "passed": passed,
+                        "error": None if passed else f"HTTP {response.status_code}"
+                    })
+
+                except httpx.TimeoutException:
+                    failure_count += 1
+                    results.append({
+                        "request_number": i + 1,
+                        "status_code": 0,
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "passed": False,
+                        "error": "Request timed out"
+                    })
+                except Exception as e:
+                    failure_count += 1
+                    error_msg = str(e)
+                    # Flag potential connection pool issues
+                    if "connection" in error_msg.lower() and "closed" in error_msg.lower():
+                        error_msg = f"CONNECTION STABILITY ISSUE: {error_msg}"
+                    results.append({
+                        "request_number": i + 1,
+                        "status_code": 0,
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "passed": False,
+                        "error": error_msg
+                    })
+
+                # Wait between requests
+                if i < num_requests - 1:
+                    await asyncio.sleep(delay_between_requests)
+
+        # Calculate success rate - must be 100% to pass
+        success_rate = success_count / num_requests if num_requests > 0 else 0
+        passed = success_rate == 1.0
+
+        return {
+            "passed": passed,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "total_requests": num_requests,
+            "success_rate": success_rate,
+            "results": results,
+            "error": None if passed else f"Connection stability test failed: {failure_count}/{num_requests} requests failed"
+        }
+
+    async def run_public_endpoint_tests(
+        self,
+        project: Project,
+        public_endpoints: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Test that public endpoints are actually public (don't return 401/403).
+
+        This is a CRITICAL test - if a public endpoint returns 401 or 403,
+        it's a bug that blocks client access.
+
+        Args:
+            project: The project to test
+            public_endpoints: Optional list of endpoint configs. Each should have:
+                - path: str - endpoint path (e.g., "/api/v1/request/{token}")
+                - method: str - HTTP method (default: "GET")
+
+        Returns:
+            Dict with endpoints tested, passed, failed, and detailed results
+        """
+        if not project.production_api_url:
+            return {
+                "endpoints_tested": 0,
+                "endpoints_passed": 0,
+                "endpoints_failed": 0,
+                "results": [],
+                "error": "No production API URL configured"
+            }
+
+        base_url = project.production_api_url.rstrip('/')
+
+        # Default public endpoints every API should have
+        endpoints_to_test = [
+            {"path": "/health", "method": "GET", "name": "Health check"},
+            {"path": "/", "method": "GET", "name": "Root endpoint"},
+        ]
+
+        # Add any custom public endpoints
+        if public_endpoints:
+            endpoints_to_test.extend(public_endpoints)
+
+        results = []
+        endpoints_passed = 0
+        endpoints_failed = 0
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for endpoint_config in endpoints_to_test:
+                path = endpoint_config["path"]
+                method = endpoint_config.get("method", "GET")
+                name = endpoint_config.get("name", path)
+                url = f"{base_url}{path}"
+
+                start_time = time.time()
+                try:
+                    if method == "GET":
+                        response = await client.get(url)
+                    elif method == "POST":
+                        response = await client.post(url, json={})
+                    elif method == "OPTIONS":
+                        response = await client.options(url)
+                    else:
+                        response = await client.request(method, url)
+
+                    response_time_ms = int((time.time() - start_time) * 1000)
+
+                    # CRITICAL: 401 or 403 on a public endpoint is a BUG
+                    if response.status_code in [401, 403]:
+                        passed = False
+                        error = f"CRITICAL BUG: Public endpoint returns {response.status_code} (requires auth)"
+                        endpoints_failed += 1
+                    else:
+                        # Any other status (200, 404, 422, etc.) is acceptable
+                        # A public endpoint just needs to not require auth
+                        passed = True
+                        error = None
+                        endpoints_passed += 1
+
+                    results.append({
+                        "endpoint": path,
+                        "name": name,
+                        "method": method,
+                        "status_code": response.status_code,
+                        "response_time_ms": response_time_ms,
+                        "passed": passed,
+                        "is_public": passed,
+                        "error": error
+                    })
+
+                except httpx.TimeoutException:
+                    endpoints_failed += 1
+                    results.append({
+                        "endpoint": path,
+                        "name": name,
+                        "method": method,
+                        "status_code": 0,
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "passed": False,
+                        "is_public": None,
+                        "error": "Request timed out"
+                    })
+                except Exception as e:
+                    endpoints_failed += 1
+                    results.append({
+                        "endpoint": path,
+                        "name": name,
+                        "method": method,
+                        "status_code": 0,
+                        "response_time_ms": int((time.time() - start_time) * 1000),
+                        "passed": False,
+                        "is_public": None,
+                        "error": str(e)
+                    })
+
+        return {
+            "endpoints_tested": len(results),
+            "endpoints_passed": endpoints_passed,
+            "endpoints_failed": endpoints_failed,
+            "results": results
+        }
+
     async def run_api_smoke_tests(self, project: Project) -> Dict[str, Any]:
         """
         Run API smoke tests against the project's production API.
@@ -291,7 +512,7 @@ class ProductionTestingService:
 
         Args:
             project: The project to test
-            run_type: Type of test to run ('smoke', 'ui', 'health', 'full')
+            run_type: Type of test to run ('smoke', 'ui', 'health', 'full', 'stability')
 
         Returns:
             ProductionTestRun with results
@@ -313,8 +534,11 @@ class ProductionTestingService:
             api_results = {"endpoints_tested": 0, "endpoints_passed": 0, "endpoints_failed": 0, "results": []}
             ui_results = {"ui_tests_passed": 0, "ui_tests_failed": 0, "results": []}
             health_results = {}
+            stability_results = {}
 
             # Run tests based on run_type
+            public_endpoint_results = {}
+
             if run_type in ["full", "health"]:
                 health_results = await self.run_health_check(project)
 
@@ -324,13 +548,25 @@ class ProductionTestingService:
             if run_type in ["full", "ui"]:
                 ui_results = await self.run_ui_tests(project)
 
+            # Run connection stability test for full and stability run types
+            if run_type in ["full", "stability"]:
+                stability_results = await self.run_connection_stability_test(project)
+
+            # Run public endpoint access control test - CRITICAL
+            # This catches the 403 bug before it affects clients
+            if run_type in ["full", "public"]:
+                public_endpoint_results = await self.run_public_endpoint_tests(project)
+
             # Calculate totals
             endpoints_failed = api_results.get("endpoints_failed", 0)
             ui_tests_failed = ui_results.get("ui_tests_failed", 0)
             health_down = health_results.get("status") == "down" if health_results else False
+            stability_failed = not stability_results.get("passed", True) if stability_results else False
+            public_endpoint_failed = public_endpoint_results.get("endpoints_failed", 0) > 0 if public_endpoint_results else False
 
             # Determine overall status
-            if endpoints_failed > 0 or ui_tests_failed > 0 or health_down:
+            # Public endpoint failures are CRITICAL - they block client access
+            if endpoints_failed > 0 or ui_tests_failed > 0 or health_down or stability_failed or public_endpoint_failed:
                 status = ProductionTestRunStatus.FAILED
             else:
                 status = ProductionTestRunStatus.PASSED
@@ -344,7 +580,11 @@ class ProductionTestingService:
             test_run.ui_tests_failed = ui_tests_failed
             test_run.api_results = api_results.get("results", [])
             test_run.ui_results = ui_results.get("results", [])
-            test_run.health_results = health_results
+            test_run.health_results = {
+                **health_results,
+                "stability_test": stability_results if stability_results else None,
+                "public_endpoint_test": public_endpoint_results if public_endpoint_results else None
+            }
             test_run.completed_at = datetime.utcnow()
             test_run.duration_ms = int((time.time() - start_time) * 1000)
 

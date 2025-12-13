@@ -6,6 +6,8 @@ import { success, error, info, warn, spinner, printBanner } from '../utils/ui.js
 import { resolveTestVariables, buildExecutionPlan, getTestStats } from '../core/test-generator/index.js';
 import { generateFakeEntity, generateCredentials } from '../core/test-generator/data-faker.js';
 import { detectHostingPlatform, probeUrlsWithPatterns, analyzeError } from '../core/pattern-matcher.js';
+import { runLiveTests } from '../core/live-tester.js';
+import { analyzeFailures, autoFix, detectIssueType, listKnownFixes } from '../core/auto-fixer.js';
 import chalk from 'chalk';
 import crypto from 'crypto';
 
@@ -15,6 +17,28 @@ import crypto from 'crypto';
  */
 export async function qaCommand(options) {
   printBanner();
+
+  // Handle --live flag for live production flow tests
+  if (options.live) {
+    const apiUrl = options.apiUrl;
+    if (!apiUrl) {
+      error('Live tests require --api-url flag');
+      info('Usage: devloop qa --live --api-url https://your-api.com/api/v1');
+      return;
+    }
+
+    const liveResults = await runLiveTests({ apiUrl });
+
+    // Return non-zero exit code if tests failed
+    if (liveResults.failed > 0) {
+      const total = liveResults.passed + liveResults.failed;
+      const passRate = Math.round((liveResults.passed / total) * 100);
+      if (passRate < 80) {
+        process.exitCode = 1;
+      }
+    }
+    return;
+  }
 
   const projectRoot = getProjectRoot();
   const configDir = path.join(projectRoot, CONFIG_DIR);
@@ -325,29 +349,85 @@ export async function qaCommand(options) {
   // ========================================
   if (options.fix && results.failures.length > 0) {
     console.log('');
-    info('Auto-fix requested - analyzing failures...');
+    info('Auto-fix requested - analyzing failures with enhanced diagnostics...');
 
-    const fixes = await analyzeAndFix(results.failures, discovery, projectRoot);
+    // Convert failures to format expected by auto-fixer
+    const failuresForAnalysis = results.failures.map(f => ({
+      endpoint: f.test?.path || f.test?.route || f.test?.name,
+      status: f.test?.statusCode,
+      error: f.test?.error,
+      details: f.test?.error || `HTTP ${f.test?.statusCode}`,
+      response: f.test?.response
+    }));
 
-    if (fixes.length > 0) {
-      console.log('');
-      console.log(chalk.bold.yellow('Suggested Fixes:'));
-      for (const fix of fixes) {
-        console.log(`  ${chalk.yellow('→')} ${fix.description}`);
-        if (fix.file) {
-          console.log(`    ${chalk.gray(`File: ${fix.file}`)}`);
-        }
-        if (fix.suggestion) {
-          console.log(`    ${chalk.gray(`Suggestion: ${fix.suggestion}`)}`);
+    // Use enhanced auto-fixer to analyze and potentially fix issues
+    const analysisResult = await analyzeFailures(failuresForAnalysis, {
+      url: apiUrl || baseUrl,
+      autoApply: true,  // Actually apply fixes when --fix is used
+      verifyFix: true,
+      frontendUrl: baseUrl
+    });
+
+    if (analysisResult.issues.length > 0) {
+      // Also run the legacy analysis for additional suggestions
+      const legacyFixes = await analyzeAndFix(results.failures, discovery, projectRoot);
+
+      if (legacyFixes.length > 0) {
+        console.log('');
+        console.log(chalk.bold.yellow('Additional Suggestions:'));
+        for (const fix of legacyFixes) {
+          console.log(`  ${chalk.yellow('→')} ${fix.description}`);
+          if (fix.file) {
+            console.log(`    ${chalk.gray(`File: ${fix.file}`)}`);
+          }
+          if (fix.suggestion) {
+            console.log(`    ${chalk.gray(`Suggestion: ${fix.suggestion}`)}`);
+          }
         }
       }
 
-      // Save fixes to file
-      const fixesPath = path.join(configDir, 'qa-fixes.json');
-      fs.writeFileSync(fixesPath, JSON.stringify(fixes, null, 2));
-      info(`Fixes saved to ${CONFIG_DIR}/qa-fixes.json`);
+      // Save all analysis to file
+      const analysisPath = path.join(configDir, 'qa-fixes.json');
+      fs.writeFileSync(analysisPath, JSON.stringify({
+        autoFixerResults: analysisResult,
+        legacyFixes: legacyFixes,
+        timestamp: new Date().toISOString()
+      }, null, 2));
+      info(`Analysis saved to ${CONFIG_DIR}/qa-fixes.json`);
+
+      // If fixes were applied, suggest re-running QA
+      if (analysisResult.fixesApplied > 0) {
+        console.log('');
+        console.log(chalk.bold.green('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log(chalk.bold.green(`  ✓ Applied ${analysisResult.fixesApplied} fix(es)`));
+        console.log(chalk.bold.green('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+        console.log('');
+        info('Re-run QA to verify fixes: devloop qa');
+      }
     } else {
-      info('No automatic fixes could be determined');
+      // Fall back to legacy analysis only
+      const legacyFixes = await analyzeAndFix(results.failures, discovery, projectRoot);
+
+      if (legacyFixes.length > 0) {
+        console.log('');
+        console.log(chalk.bold.yellow('Suggested Fixes:'));
+        for (const fix of legacyFixes) {
+          console.log(`  ${chalk.yellow('→')} ${fix.description}`);
+          if (fix.file) {
+            console.log(`    ${chalk.gray(`File: ${fix.file}`)}`);
+          }
+          if (fix.suggestion) {
+            console.log(`    ${chalk.gray(`Suggestion: ${fix.suggestion}`)}`);
+          }
+        }
+
+        // Save fixes to file
+        const fixesPath = path.join(configDir, 'qa-fixes.json');
+        fs.writeFileSync(fixesPath, JSON.stringify(legacyFixes, null, 2));
+        info(`Fixes saved to ${CONFIG_DIR}/qa-fixes.json`);
+      } else {
+        info('No automatic fixes could be determined');
+      }
     }
   }
 

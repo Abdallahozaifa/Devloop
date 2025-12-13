@@ -94,11 +94,13 @@ function generateEntityCrudTests(entityName, endpoints, entity, auth) {
   const deleteEndpoint = endpoints.find(e => e.method === 'DELETE' && (e.path.includes('{') || e.path.includes(':')));
 
   // Create a complete CRUD flow test
+  // CRUD flows require auth if they have any write operations (POST/PUT/PATCH/DELETE)
+  const hasWriteOps = endpoints.some(e => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(e.method));
   const crudFlow = {
     name: `${entityName} CRUD Flow`,
     type: 'crud_flow',
     entity: entityName,
-    requiresAuth: endpoints.some(e => e.auth),
+    requiresAuth: hasWriteOps || endpoints.some(e => e.auth),
     steps: [],
   };
 
@@ -217,12 +219,27 @@ function generateEntityCrudTests(entityName, endpoints, entity, auth) {
 }
 
 function generateEndpointTest(endpoint, auth, entity = null) {
+  // Determine if endpoint requires auth:
+  // For write operations (POST/PUT/PATCH/DELETE), ALWAYS assume auth required unless it's a public path
+  // This overrides any auth: false that may have been set by discovery (which often doesn't detect auth properly)
+  const publicPaths = ['/auth', '/login', '/register', '/health', '/healthz', '/ping', '/docs', '/openapi', '/status', '/public', '/webhook'];
+  const isPublicPath = publicPaths.some(p => endpoint.path.toLowerCase().includes(p));
+
+  let requiresAuth;
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(endpoint.method)) {
+    // Write operations ALWAYS require auth unless explicitly public path
+    requiresAuth = !isPublicPath;
+  } else {
+    // GET requests - use endpoint's auth flag or default to false
+    requiresAuth = endpoint.auth || false;
+  }
+
   const test = {
     name: `${endpoint.method} ${endpoint.path}`,
     type: 'api',
     method: endpoint.method,
     path: endpoint.path,
-    auth: endpoint.auth,
+    auth: requiresAuth,
     expect: {
       status: endpoint.method === 'DELETE' ? [200, 204] : 200,
     },
@@ -356,11 +373,16 @@ export function generateAuthTests(auth) {
   // Login test
   if (auth.loginEndpoint) {
     const [method, path] = auth.loginEndpoint.split(' ');
+    // Normalize path: if it's just /login or /register, prefix with /auth
+    let normalizedPath = path || '/auth/login';
+    if (normalizedPath === '/login') {
+      normalizedPath = '/auth/login';
+    }
     tests.push({
       name: 'Login',
       type: 'auth',
       method: method || 'POST',
-      path: path || '/auth/login',
+      path: normalizedPath,
       body: generateAuthCredentials(auth.credentialFields),
       expect: {
         status: 200,
@@ -373,11 +395,16 @@ export function generateAuthTests(auth) {
   // Register test
   if (auth.registerEndpoint) {
     const [method, path] = auth.registerEndpoint.split(' ');
+    // Normalize path: if it's just /login or /register, prefix with /auth
+    let normalizedPath = path || '/auth/register';
+    if (normalizedPath === '/register') {
+      normalizedPath = '/auth/register';
+    }
     tests.push({
       name: 'Register',
       type: 'auth',
       method: method || 'POST',
-      path: path || '/auth/register',
+      path: normalizedPath,
       body: {
         ...generateAuthCredentials(auth.credentialFields),
         name: 'Test User',
@@ -427,7 +454,13 @@ export function generateAuthTests(auth) {
 function generateAuthCredentials(credentialFields = ['email', 'password']) {
   const creds = {};
 
-  for (const field of credentialFields) {
+  // Always include password for login/register - discovery often misses it
+  const fieldsToGenerate = [...credentialFields];
+  if (!fieldsToGenerate.some(f => f.toLowerCase().includes('password'))) {
+    fieldsToGenerate.push('password');
+  }
+
+  for (const field of fieldsToGenerate) {
     const fieldLower = field.toLowerCase();
     if (fieldLower.includes('email')) {
       creds[field] = `test_${Date.now()}@devloop-test.com`;

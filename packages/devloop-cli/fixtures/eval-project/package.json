@@ -1,0 +1,13 @@
+
+{
+  "name": "eval-project",
+  "version": "1.0.0",
+  "description": "A fixture project for DevLoop evaluations.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

@@ -1553,6 +1553,48 @@ function LandingPage() {
               </div>
             </motion.div>
 
+            {/* Production Testing - Medium Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.45 }}
+              className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-red-500/10 via-zinc-900/80 to-zinc-900 border border-red-500/20 p-6 min-h-[200px] hover:border-red-500/40 transition-all duration-500 hover:shadow-[0_0_60px_-12px_rgba(239,68,68,0.3)]"
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(239,68,68,0.15),transparent_50%)] opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+              <div className="relative z-10 h-full flex flex-col">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">Production Testing</h3>
+                <p className="text-zinc-400 text-sm mb-4">Smoke tests, health monitoring, and live validation on production.</p>
+
+                {/* Production Test Mockup */}
+                <div className="mt-auto space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-zinc-400">Health Check</span>
+                    <span className="text-emerald-400 ml-auto">45ms</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span className="text-zinc-400">API Smoke Tests</span>
+                    <span className="text-emerald-400 ml-auto">5/5 passed</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span className="text-zinc-400">Public Endpoints</span>
+                    <span className="text-emerald-400 ml-auto">OK</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+
             {/* One Command Setup - Wide Card */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
@@ -2188,6 +2230,7 @@ function Dashboard() {
     health_check_endpoint: '/health'
   })
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
+  const [runningProductionTest, setRunningProductionTest] = useState<string | null>(null)
 
   useEffect(() => {
     if (!token) return
@@ -2316,6 +2359,30 @@ function Dashboard() {
     } catch (err) {
       console.error('Delete project error:', err)
     }
+  }
+
+  const handleRunProductionTest = async (projectId: string) => {
+    setRunningProductionTest(projectId)
+    try {
+      const res = await fetch(`${API_URL}/api/v1/projects/${projectId}/production-test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      })
+
+      if (res.ok) {
+        // Refresh projects to get updated health status
+        const projectsRes = await fetch(`${API_URL}/api/v1/dashboard/projects`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (projectsRes.ok) setProjects(await projectsRes.json())
+      }
+    } catch (err) {
+      console.error('Production test error:', err)
+    }
+    setRunningProductionTest(null)
   }
 
   const openProjectSettings = (project: Project) => {
@@ -2556,7 +2623,7 @@ function Dashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-4 mt-4 text-xs">
-                          {/* Health Status Indicator */}
+                          {/* QA Status Indicator */}
                           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
                             project.last_qa_status === 'passed'
                               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -2568,8 +2635,27 @@ function Dashboard() {
                               project.last_qa_status === 'passed' ? 'bg-emerald-400' :
                               project.last_qa_status === 'failed' ? 'bg-red-400' : 'bg-zinc-400'
                             }`} />
-                            {project.last_qa_status === 'passed' ? 'Healthy' : project.last_qa_status === 'failed' ? 'Issues' : 'No builds'}
+                            {project.last_qa_status === 'passed' ? 'QA Passed' : project.last_qa_status === 'failed' ? 'QA Failed' : 'No QA runs'}
                           </div>
+                          {/* Production Health Status - Only show when production testing is enabled */}
+                          {project.enable_production_testing && (
+                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
+                              project.health_check_status === 'healthy'
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : project.health_check_status === 'degraded'
+                                ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                : project.health_check_status === 'down'
+                                ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                            }`}>
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                              </svg>
+                              {project.health_check_status === 'healthy' ? 'Prod Healthy' :
+                               project.health_check_status === 'degraded' ? 'Prod Degraded' :
+                               project.health_check_status === 'down' ? 'Prod Down' : 'Prod Unknown'}
+                            </div>
+                          )}
                           {project.qa_schedule !== 'none' && (
                             <span className="text-zinc-500 flex items-center gap-1">
                               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2581,6 +2667,30 @@ function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 ml-4">
+                        {/* Run Production Test Button - Only show when production testing is enabled */}
+                        {project.enable_production_testing && (
+                          <button
+                            onClick={() => handleRunProductionTest(project.id)}
+                            disabled={runningProductionTest === project.id}
+                            className={`p-2 rounded-lg transition-all ${
+                              runningProductionTest === project.id
+                                ? 'text-red-400 bg-red-500/10 animate-pulse'
+                                : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+                            }`}
+                            title="Run Production Test"
+                          >
+                            {runningProductionTest === project.id ? (
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                              </svg>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => openProjectSettings(project)}
                           className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.05] transition-all"
@@ -2783,6 +2893,76 @@ function Dashboard() {
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
                   </select>
+                </div>
+
+                {/* Production Testing Section */}
+                <div className="col-span-2 pt-4 mt-4 border-t border-zinc-700">
+                  <h4 className="font-medium text-white mb-3 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    Production Testing
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={projectSettings.enable_production_testing}
+                          onChange={e => setProjectSettings({ ...projectSettings, enable_production_testing: e.target.checked })}
+                          className="rounded bg-zinc-800 border-zinc-700 text-red-500 focus:ring-red-500"
+                        />
+                        Enable Production Testing
+                      </label>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">Production URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://yourapp.com"
+                        value={projectSettings.production_url}
+                        onChange={e => setProjectSettings({ ...projectSettings, production_url: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-red-500"
+                        disabled={!projectSettings.enable_production_testing}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">Production API URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://api.yourapp.com"
+                        value={projectSettings.production_api_url}
+                        onChange={e => setProjectSettings({ ...projectSettings, production_api_url: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-red-500"
+                        disabled={!projectSettings.enable_production_testing}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">Health Check Endpoint</label>
+                      <input
+                        type="text"
+                        placeholder="/health"
+                        value={projectSettings.health_check_endpoint}
+                        onChange={e => setProjectSettings({ ...projectSettings, health_check_endpoint: e.target.value })}
+                        className="w-full px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-red-500"
+                        disabled={!projectSettings.enable_production_testing}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-zinc-400 mb-1">Production Test Schedule</label>
+                      <select
+                        value={projectSettings.production_test_schedule}
+                        onChange={e => setProjectSettings({ ...projectSettings, production_test_schedule: e.target.value as 'none' | 'hourly' | 'daily' | 'weekly' })}
+                        className="w-full px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-white focus:outline-none focus:border-red-500"
+                        disabled={!projectSettings.enable_production_testing}
+                      >
+                        <option value="none">Manual Only</option>
+                        <option value="hourly">Every Hour</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-3 mt-6">

@@ -1,0 +1,130 @@
+{
+  "principles": [
+    "Consistency over creativity - same patterns everywhere",
+    "Fixed dimensions - cards, modals, inputs same size",
+    "Generous whitespace - don't cram content",
+    "Clear hierarchy - one primary action per view",
+    "Smooth transitions - 200-300ms ease"
+  ],
+
+  "reference_apps": [
+    "Linear - spacing, typography, dark mode",
+    "Vercel - clean cards, clear CTAs",
+    "Stripe - form design, error states",
+    "Notion - onboarding, empty states",
+    "Raycast - command palette, shortcuts"
+  ],
+
+  "components": {
+    "card": {
+      "width": "max-w-xl (576px) or max-w-2xl (672px)",
+      "padding": "p-6 or p-8",
+      "borderRadius": "rounded-xl or rounded-2xl",
+      "background": "bg-gray-800/50 or bg-white/5",
+      "border": "border border-gray-700/50",
+      "shadow": "shadow-xl",
+      "minHeight": "min-h-[300px] for content cards"
+    },
+
+    "modal": {
+      "width": "max-w-md (448px) for forms, max-w-2xl for content",
+      "padding": "p-6",
+      "borderRadius": "rounded-2xl",
+      "backdrop": "bg-black/60 backdrop-blur-sm",
+      "animation": "fade in + scale from 95% to 100%"
+    },
+
+    "button": {
+      "primary": "bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium",
+      "secondary": "bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg",
+      "ghost": "hover:bg-gray-800 text-gray-400 hover:text-white px-4 py-2 rounded-lg",
+      "height": "h-10 (40px) standard, h-12 (48px) large",
+      "minWidth": "min-w-[100px] for action buttons"
+    },
+
+    "input": {
+      "height": "h-10 (40px) standard, h-12 (48px) large",
+      "padding": "px-4",
+      "borderRadius": "rounded-lg",
+      "border": "border border-gray-700 focus:border-blue-500",
+      "background": "bg-gray-800"
+    },
+
+    "wizard": {
+      "stepIndicator": "fixed at top, show completed with checkmarks",
+      "contentArea": "fixed height min-h-[350px], content centered",
+      "buttons": "always at bottom, Previous left, Next right",
+      "transitions": "fade or slide, 200ms"
+    },
+
+    "spacing": {
+      "section": "py-16 or py-20",
+      "card_gap": "gap-6",
+      "form_gap": "space-y-4",
+      "inline_gap": "gap-2 or gap-3"
+    },
+
+    "typography": {
+      "h1": "text-4xl font-bold",
+      "h2": "text-2xl font-bold",
+      "h3": "text-xl font-semibold",
+      "body": "text-base text-gray-300",
+      "muted": "text-sm text-gray-500",
+      "lineHeight": "leading-relaxed for body text"
+    },
+
+    "colors": {
+      "background": "#0a0a0b or #111111",
+      "card": "#1a1a1b or rgba(255,255,255,0.05)",
+      "border": "#2a2a2b or rgba(255,255,255,0.1)",
+      "primary": "#3b82f6 (blue-500)",
+      "success": "#22c55e (green-500)",
+      "warning": "#f59e0b (amber-500)",
+      "error": "#ef4444 (red-500)",
+      "text": "#ffffff",
+      "textMuted": "#9ca3af (gray-400)"
+    }
+  },
+
+  "patterns": {
+    "empty_state": {
+      "layout": "centered, icon above text",
+      "icon": "64px, muted color",
+      "title": "text-xl font-semibold mb-2",
+      "description": "text-gray-400 max-w-md text-center mb-6",
+      "cta": "primary button"
+    },
+
+    "form": {
+      "layout": "single column, labels above inputs",
+      "labelSpacing": "mb-2",
+      "inputSpacing": "space-y-4",
+      "buttons": "right-aligned, Cancel then Submit",
+      "validation": "inline errors below input, red text"
+    },
+
+    "list": {
+      "item_padding": "p-4",
+      "item_border": "border-b border-gray-800 last:border-0",
+      "hover": "hover:bg-gray-800/50",
+      "selected": "bg-blue-500/10 border-l-2 border-blue-500"
+    },
+
+    "toast": {
+      "position": "bottom-right",
+      "width": "max-w-sm",
+      "duration": "4000ms",
+      "animation": "slide in from right"
+    }
+  },
+
+  "anti_patterns": [
+    "Never use different card sizes in the same view",
+    "Never use more than 2 font sizes per card",
+    "Never have buttons smaller than 40px height",
+    "Never use pure black (#000) for backgrounds",
+    "Never have content jump/resize on interaction",
+    "Never have more than one primary button visible",
+    "Never use alert/confirm dialogs - use inline feedback"
+  ]
+}

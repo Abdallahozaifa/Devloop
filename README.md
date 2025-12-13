@@ -1,198 +1,223 @@
 # DevLoop
 
-**The last mile of AI coding.**
+**Spec-first API testing and validation.**
 
-AI writes your code. DevLoop ships it. Describe what you want in plain English, get it working in production.
-
-## Pricing
-
-| Plan | Price | Projects |
-|------|-------|----------|
-| Solo | $19/mo | 1 project |
-| Pro | $39/mo | 5 projects |
-| Team | $79/mo | Unlimited |
-
-All plans include:
-- Unlimited builds
-- Full development loop (build → test → deploy → verify)
-- Dashboard access
-
-**[Get Started](https://devloop.dev)**
+DevLoop generates comprehensive test specifications from your API code and runs them automatically. Write your API, let DevLoop validate it works correctly.
 
 ## What is DevLoop?
 
-DevLoop completes what AI coding tools like Copilot and Cursor start. While they help you write code, DevLoop actually ships it.
-
-**The Autonomous Development Loop:**
-1. **Describe** - Tell DevLoop what you want in plain English
-2. **Build** - AI understands your codebase and generates the implementation
-3. **Test** - Automatically writes and runs tests
-4. **Deploy** - Ships to production
-5. **Verify** - Confirms everything works in production
-6. **Fix** - If anything breaks, DevLoop debugs and fixes it
+DevLoop is a CLI tool that:
+1. **Generates specs** from your codebase using AI
+2. **Runs API tests** based on those specs
+3. **Validates contracts** between frontend and backend
+4. **Reports results** with detailed pass/fail information
 
 ## Quick Start
 
 ```bash
-# In your project directory
-npx create-devloop
+# Install the CLI
+npm install -g devloop-cli
 
-# Enter your license key (get one at devloop.dev)
-# DL-XXXX-XXXX-XXXX
+# Initialize in your project
+devloop init
 
-# Describe what you want to build
-devloop build 'add stripe checkout'
+# Generate a spec for your API
+devloop spec generate "User Authentication API"
 
-# Or run the full loop
-./scripts/devloop.sh build 'add user authentication'
+# Run tests
+devloop test
 ```
 
-## What Gets Created
+## How It Works
+
+### 1. Initialize Your Project
+
+```bash
+devloop init
+```
+
+This creates a `.devloop/` directory with:
+- `config.json` - Framework detection and settings
+- `config.yaml` - Test configuration (auth, variables)
+- `specs/` - Generated test specifications
+
+### 2. Configure Authentication
+
+Edit `.devloop/config.yaml`:
+
+```yaml
+apiUrl: http://localhost:3000
+
+roles:
+  user:
+    credentials:
+      email: test@example.com
+      password: testpassword123
+    loginEndpoint: /api/v1/auth/login
+
+  other_user:
+    credentials:
+      email: other@example.com
+      password: testpassword123
+    loginEndpoint: /api/v1/auth/login
+
+variables:
+  # Add any variables your tests need
+  # ITEM_ID: 00000000-0000-0000-0000-000000000001
+```
+
+### 3. Generate Specs
+
+```bash
+# Generate spec from feature description
+devloop spec generate "Invoice Management"
+
+# Or generate from your API routes automatically
+devloop spec generate
+```
+
+Generated specs include:
+- Data models with types and constraints
+- API endpoints with all response codes (200, 400, 401, 403, 404, 422)
+- Business rules
+- API tests with authentication scenarios
+- Contract checks
+
+### 4. Run Tests
+
+```bash
+# Run all tests (read-only by default)
+devloop test
+
+# Allow write operations (POST, PUT, DELETE)
+devloop test --allow-writes
+
+# Dry run - show what would be tested
+devloop test --dry-run
+
+# Verbose output
+devloop test --verbose
+```
+
+## Spec Format
+
+Specs are framework-agnostic YAML files:
+
+```yaml
+name: User Management
+version: "1.0"
+
+models:
+  User:
+    fields:
+      id:
+        type: uuid
+        generated: true
+      email:
+        type: string
+        required: true
+      created_at:
+        type: datetime
+        generated: true
+
+api:
+  - endpoint: POST /api/v1/users
+    auth: required
+    request:
+      body:
+        email:
+          type: string
+          required: true
+    response:
+      - status: 201
+        body: User
+      - status: 400
+        when: invalid data
+      - status: 401
+        when: not authenticated
+
+tests:
+  api:
+    - name: Create user requires auth
+      as: guest
+      request:
+        method: POST
+        path: /api/v1/users
+        body:
+          email: test@example.com
+      expect:
+        status: 401
+
+    - name: Create user succeeds
+      as: user
+      request:
+        method: POST
+        path: /api/v1/users
+        body:
+          email: newuser@example.com
+      expect:
+        status: 201
+        bodyHas:
+          - id
+          - email
+```
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `devloop init` | Initialize DevLoop in current project |
+| `devloop spec generate [feature]` | Generate spec from feature description |
+| `devloop spec list` | List all specs |
+| `devloop test` | Run all tests |
+| `devloop test --allow-writes` | Run tests including write operations |
+| `devloop test --dry-run` | Preview tests without running |
+
+## Project Structure
 
 ```
 your-project/
 ├── .devloop/
-│   ├── config.md         # Project conventions for AI
-│   ├── features.md       # Feature list
-│   ├── task.md           # Current task description
-│   └── builds/           # Build results and logs
-├── scripts/
-│   ├── devloop.sh        # Main orchestrator
-│   ├── build.sh          # Build command
-│   ├── test.sh           # Test runner
-│   ├── deploy.sh         # Deployment
-│   └── verify.sh         # Production verification
-└── .devloop.json         # DevLoop configuration
+│   ├── config.json        # Framework/language detection
+│   ├── config.yaml        # Auth and test variables
+│   └── specs/
+│       └── feature.spec.yaml
+└── ...
 ```
 
-## Commands
+## Supported Frameworks
 
-### Build Commands
+DevLoop auto-detects:
+- **Node.js** - Express, Fastify
+- **Python** - FastAPI, Django, Flask
+- **React/Vue/Angular** - Frontend frameworks
+- **Generic** - Any project structure
+
+## Development
 
 ```bash
-devloop build 'add stripe checkout'      # Build a feature
-devloop build 'fix login bug'            # Fix a bug
-devloop build 'add dark mode toggle'     # Add UI feature
+# Clone the repo
+git clone https://github.com/your-org/devloop.git
+
+# Install dependencies
+cd devloop
+npm install
+
+# Link CLI for development
+cd packages/devloop-cli
+npm link
+
+# Run tests
+npm test
 ```
 
-### Direct Scripts
+## Architecture
 
-```bash
-./scripts/devloop.sh build 'description'  # Full build loop
-./scripts/devloop.sh test                 # Run tests
-./scripts/devloop.sh deploy               # Deploy to production
-./scripts/devloop.sh verify               # Verify production
-./scripts/devloop.sh status               # Check project status
-```
-
-## How DevLoop Works
-
-### 1. Understands Your Codebase
-DevLoop scans your project to understand:
-- Your tech stack (React, Node, Python, etc.)
-- Your code patterns and conventions
-- Existing features and architecture
-
-### 2. Generates Complete Features
-When you describe what you want:
-- Plans the implementation
-- Writes production-ready code
-- Creates necessary components, routes, and APIs
-
-### 3. Tests Everything
-Automatically:
-- Writes unit and integration tests
-- Runs your existing test suite
-- Validates the implementation works
-
-### 4. Ships to Production
-DevLoop handles deployment:
-- Commits changes to your repo
-- Creates PRs for review (optional)
-- Deploys to your production environment
-
-### 5. Verifies It Works
-After deployment:
-- Runs smoke tests against production
-- Validates endpoints are responding
-- Captures screenshots of UI changes
-- Alerts you if anything is broken
-
-### 6. Fixes What Breaks
-If verification fails:
-- Analyzes the failure
-- Generates a fix
-- Re-runs the loop until it works
-
-## Dashboard
-
-Your license includes access to the DevLoop dashboard at [devloop.dev/dashboard](https://devloop.dev/dashboard):
-
-- View build history
-- Manage projects
-- Track success/failure rates
-- Configure notifications
-- Manage billing
-
-## CI/CD Integration
-
-DevLoop works in CI/CD pipelines. Set your license key as an environment variable:
-
-```yaml
-# GitHub Actions
-env:
-  DEVLOOP_LICENSE_KEY: ${{ secrets.DEVLOOP_LICENSE_KEY }}
-
-steps:
-  - name: Run DevLoop
-    run: devloop build 'deploy latest changes'
-```
-
-## Supported Stacks
-
-DevLoop adapts to your project structure. It works with:
-
-- **Node.js/React/Next.js** - Detects `package.json`
-- **Python/FastAPI/Django** - Detects `requirements.txt`
-- **Go** - Detects `go.mod`
-- **Rust** - Detects `Cargo.toml`
-- **Generic** - Works with any project
-
-## Example Workflow
-
-```bash
-# 1. Set up DevLoop in your project
-npx create-devloop
-
-# 2. Enter your license key
-# DL-XXXX-XXXX-XXXX
-
-# 3. Configure your project
-vim .devloop/config.md
-
-# 4. Describe what you want
-devloop build 'add user profile page with avatar upload'
-
-# 5. Watch DevLoop work
-# > Understanding codebase...
-# > Planning implementation...
-# > Generating components...
-# > Writing tests...
-# > Running tests... 5/5 passed
-# > Deploying to production...
-# > Verifying... all checks passed
-# > Feature shipped in 47s
-
-# 6. Check the result
-open https://yourapp.com/profile
-```
-
-## Support
-
-- **Dashboard**: [devloop.dev/dashboard](https://devloop.dev/dashboard)
-- **Documentation**: [devloop.dev/docs](https://devloop.dev/docs)
-- **Email**: support@devloop.dev
+- **packages/devloop-cli** - Main CLI tool
+- **packages/create-devloop** - `npx create-devloop` scaffolder
+- **api/** - Backend API (Fly.io deployment)
+- **landing/** - Marketing site (devloop.dev)
 
 ## License
 
-Proprietary. See [devloop.dev/terms](https://devloop.dev/terms) for license terms.
+Proprietary. See LICENSE for details.

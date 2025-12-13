@@ -6,3 +6,5 @@ export { fixCommand } from './fix.js';
 export { statusCommand } from './status.js';
 export { auditCommand } from './audit.js';
 export { qaCommand } from './qa.js';
+export { createSpecCommand } from './spec.js';
+export { doctorCommand } from './doctor.js';

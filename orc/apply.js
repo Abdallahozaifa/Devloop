@@ -29,7 +29,8 @@ globalThis.ENV = globalThis.ENV || (function () {
 
 globalThis.RV   = ENV.RV;
 globalThis.HOST = ENV.HOST;
-globalThis.BASE = `${HOST}/hcmRestApi/rest/${RV}/en/11.13.18.05:9`;
+globalThis.RESOURCE_ROOT = `/hcmRestApi/rest/${RV}/en/11.13.18.05:9`;
+globalThis.BASE = `${HOST}${RESOURCE_ROOT}`;
 
 globalThis.ME = { PERSON_ID: ENV.PERSON_ID, ESIGN_NAME: ENV.ESIGN_NAME };
 
@@ -66,7 +67,12 @@ globalThis.api = async function (path, opts = {}) {
 globalThis.batch = (parts) => api("/", {
   method: "POST",
   headers: { "Content-Type": "application/vnd.oracle.adf.batch+json" },
-  body: JSON.stringify({ parts }),
+  body: JSON.stringify({
+    parts: parts.map(p => ({
+      ...p,
+      path: p.path.startsWith("/hcmRestApi") ? p.path : RESOURCE_ROOT + p.path,
+    })),
+  }),
 });
 
 globalThis.pause = () => new Promise(r => setTimeout(r, 2500 + Math.random() * 2500));

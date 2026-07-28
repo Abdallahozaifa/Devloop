@@ -104,43 +104,24 @@ globalThis.phaseA = async function () {
   return rows;
 };
 
-// --- phase B: draft + questionnaire ----------------------------------------
-
-globalThis.questionnaireFor = (reqNum) =>
-  api(`/questionnaireInstructions?finder=findByQuestionnaire;RequisitionNumber=${reqNum}&onlyData=true`);
+// --- phase B: create drafts ------------------------------------------------
+// Draft ID is not readable (empty response, collection 500s), but phaseC
+// finds the draft by RequisitionNumber so no ID is needed downstream.
 
 globalThis.phaseB = async function (reqs) {
   const out = [];
   for (const n of (reqs || ELIGIBLE || REQS)) {
     try {
-      const draft = await batch([{
-        id: "draft-0",
-        path: "/recruitingICEJobApplicationDrafts",
-        operation: "create",
-        payload: {
+      await api("/recruitingICEJobApplicationDrafts", {
+        method: "POST",
+        body: JSON.stringify({
           Action: "SAVE_DRAFT",
           RequisitionNumber: n,
           Content: JSON.stringify({ alternateEmail: "" }),
-        },
-      }]);
-      const draftId = draft?.parts?.[0]?.payload?.IceDraftId;
-      if (!draftId) { console.error(n, "no IceDraftId:", draft); out.push({ reqNum: n, error: "no draftId" }); await pause(); continue; }
-
-      const qnr = await api(`/recruitingICEJobApplicationDrafts/${draftId}`
-        + `/child/questionnaireResponses?expand=all&onlyData=true&limit=50`);
-
-      const qs = [];
-      for (const resp of qnr.items || [])
-        for (const q of resp.questionResponses?.items || resp.questionResponses || [])
-          qs.push({
-            QuestionnaireQuestionId: q.QuestionnaireQuestionId,
-            QuestionCode: q.QuestionCode,
-            QuestionText: q.QuestionText,
-            currentAnswerId: q.QuestionAnswerId,
-          });
-
-      out.push({ reqNum: n, draftId, questionnaireVersion: qnr.items?.[0]?.QuestionnaireVersionNumber, questions: qs });
-      console.log(`${n}: draft ${draftId}, ${qs.length} questions`);
+        }),
+      });
+      out.push({ reqNum: n, status: "draft created" });
+      console.log(`${n}: draft created`);
     } catch (e) {
       console.error(n, e.message, e.body ?? "");
       out.push({ reqNum: n, error: e.message });
@@ -148,11 +129,7 @@ globalThis.phaseB = async function (reqs) {
     await pause();
   }
 
-  const codes = new Set();
-  out.forEach(o => (o.questions || []).forEach(q => codes.add(q.QuestionCode)));
-  console.log("distinct QuestionCodes across all reqs:", [...codes]);
-  console.table(out.map(o => ({ reqNum: o.reqNum, draftId: o.draftId, qCount: o.questions?.length, error: o.error ?? "" })));
-
+  console.table(out);
   globalThis.DRAFTS = out;
   return out;
 };
@@ -161,7 +138,7 @@ globalThis.phaseB = async function (reqs) {
 
 globalThis.phaseC = async function (drafts) {
   const out = [];
-  for (const d of (drafts || DRAFTS || []).filter(x => x.draftId)) {
+  for (const d of (drafts || DRAFTS || []).filter(x => !x.error)) {
     try {
       const res = await api("/recruitingICEJobApplications", {
         method: "POST",

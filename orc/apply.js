@@ -30,6 +30,7 @@
  * ANSWER WRITE LAYER
  *   setAnswer(...)          write a single answer to a live draft
  *   applyAnswers(draftId,q) apply all ANSWER_MAP entries to a draft
+ *   submitDraftWithAnswers  create draft + answers in one batch (real pattern)
  */
 
 // ---------------------------------------------------------------------------
@@ -350,6 +351,195 @@ function checkForChoices(body) {
   }
   return false;
 }
+
+/**
+ * Submit draft with answers using the EXACT captured batch pattern.
+ *
+ * The real SPA batch has TWO parts:
+ *   part 1: creates questionnaireResponses on a draft (references draftId in path)
+ *   part 2: creates the draft itself via SAVE_DRAFT
+ *
+ * The interesting thing: part 1 references a draftId that part 2 creates.
+ * Either batch ordering handles this, or the id is generated client-side,
+ * or part references work across the batch. We replicate exactly and see.
+ *
+ * @param {string} requisitionNumber - The req number
+ * @param {Array} answers - Array of {QuestionnaireQuestionId, QuestionAnswerId}
+ * @param {string} draftId - Optional: if you have a draftId already, use it. Otherwise we try without.
+ * @param {number} questionnaireVersionNumber - Version number (default 1)
+ */
+globalThis.submitDraftWithAnswers = async function (requisitionNumber, answers, draftId, questionnaireVersionNumber = 1) {
+  dlog(`[submitDraftWithAnswers] reqNum=${requisitionNumber}, ${answers.length} answers, draftId=${draftId || "(auto)"}`);
+
+  // Build the questionResponses array from answers
+  const questionResponses = answers.map(a => ({
+    QuestionnaireQuestionId: a.QuestionnaireQuestionId,
+    QuestionAnswerId: a.QuestionAnswerId,
+    AnswerList: null,
+    AnswerLargeObject: null,
+  }));
+
+  // The path for part 1 - if no draftId provided, try referencing part 2's result
+  // Oracle batch may support ${draft-0.IceDraftId} or similar syntax
+  const qrPath = draftId
+    ? `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts/${draftId}/child/questionnaireResponses/`
+    : `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts/\${draft-0.IceDraftId}/child/questionnaireResponses/`;
+
+  const batchPayload = {
+    parts: [
+      // Part 1: Create questionnaireResponses (references draft)
+      {
+        id: "questionnaireResponse_internalCandidateQuestionnaireId",
+        path: qrPath,
+        operation: "create",
+        payload: {
+          Status: "I",
+          QuestionnaireVersionNumber: questionnaireVersionNumber,
+          questionResponses: questionResponses,
+        },
+      },
+      // Part 2: Create the draft
+      {
+        id: "draft-0",
+        path: `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts`,
+        operation: "create",
+        payload: {
+          Action: "SAVE_DRAFT",
+          RequisitionNumber: requisitionNumber,
+          Content: JSON.stringify({ alternateEmail: "" }),
+        },
+      },
+    ],
+  };
+
+  dlog(`[submitDraftWithAnswers] batch payload:`, JSON.stringify(batchPayload, null, 2));
+
+  try {
+    const r = await fetch(`${BASE}/`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/vnd.oracle.adf.batch+json",
+        "Rest-Framework-Version": "9",
+      },
+      body: JSON.stringify(batchPayload),
+    });
+
+    const text = await r.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+
+    console.log("[orc] submitDraftWithAnswers response:", body);
+
+    if (!r.ok) {
+      dlog(`[submitDraftWithAnswers] FAIL - HTTP ${r.status}`);
+      return { status: "FAIL", httpStatus: r.status, body };
+    }
+
+    // Extract draftId from response if available
+    const draftPart = body.parts?.find(p => p.id === "draft-0");
+    const createdDraftId = draftPart?.payload?.IceDraftId;
+
+    const qrPart = body.parts?.find(p => p.id === "questionnaireResponse_internalCandidateQuestionnaireId");
+
+    dlog(`[submitDraftWithAnswers] OK - createdDraftId=${createdDraftId}`);
+
+    return {
+      status: "OK",
+      draftId: createdDraftId,
+      draftPart,
+      qrPart,
+      raw: body,
+    };
+  } catch (e) {
+    dlog(`[submitDraftWithAnswers] FAIL -`, e.message);
+    return { status: "FAIL", error: e.message };
+  }
+};
+
+/**
+ * Alternative: Try with reversed part order (draft first, then questionnaire).
+ * Some batch systems execute in order and allow forward references.
+ */
+globalThis.submitDraftWithAnswersReversed = async function (requisitionNumber, answers, questionnaireVersionNumber = 1) {
+  dlog(`[submitDraftWithAnswersReversed] trying reversed order (draft first)...`);
+
+  const questionResponses = answers.map(a => ({
+    QuestionnaireQuestionId: a.QuestionnaireQuestionId,
+    QuestionAnswerId: a.QuestionAnswerId,
+    AnswerList: null,
+    AnswerLargeObject: null,
+  }));
+
+  const batchPayload = {
+    parts: [
+      // Part 1: Create the draft FIRST
+      {
+        id: "draft-0",
+        path: `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts`,
+        operation: "create",
+        payload: {
+          Action: "SAVE_DRAFT",
+          RequisitionNumber: requisitionNumber,
+          Content: JSON.stringify({ alternateEmail: "" }),
+        },
+      },
+      // Part 2: Create questionnaireResponses (reference draft-0's result)
+      {
+        id: "questionnaireResponse_internalCandidateQuestionnaireId",
+        path: `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts/\${draft-0.IceDraftId}/child/questionnaireResponses/`,
+        operation: "create",
+        payload: {
+          Status: "I",
+          QuestionnaireVersionNumber: questionnaireVersionNumber,
+          questionResponses: questionResponses,
+        },
+      },
+    ],
+  };
+
+  dlog(`[submitDraftWithAnswersReversed] batch payload:`, JSON.stringify(batchPayload, null, 2));
+
+  try {
+    const r = await fetch(`${BASE}/`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/vnd.oracle.adf.batch+json",
+        "Rest-Framework-Version": "9",
+      },
+      body: JSON.stringify(batchPayload),
+    });
+
+    const text = await r.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+
+    console.log("[orc] submitDraftWithAnswersReversed response:", body);
+
+    if (!r.ok) {
+      dlog(`[submitDraftWithAnswersReversed] FAIL - HTTP ${r.status}`);
+      return { status: "FAIL", httpStatus: r.status, body };
+    }
+
+    const draftPart = body.parts?.find(p => p.id === "draft-0");
+    const createdDraftId = draftPart?.payload?.IceDraftId;
+    const qrPart = body.parts?.find(p => p.id === "questionnaireResponse_internalCandidateQuestionnaireId");
+
+    dlog(`[submitDraftWithAnswersReversed] OK - createdDraftId=${createdDraftId}`);
+
+    return {
+      status: "OK",
+      draftId: createdDraftId,
+      draftPart,
+      qrPart,
+      raw: body,
+    };
+  } catch (e) {
+    dlog(`[submitDraftWithAnswersReversed] FAIL -`, e.message);
+    return { status: "FAIL", error: e.message };
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Debug / Inspection layer (read-only except draft creation)

@@ -23,6 +23,7 @@
  *   describeDrafts()           check finders/actions - is discovery possible?
  *   describeQuestionnaire(p)   POST to indexSearch endpoint for full Q content
  *   readQuestionnaireContent() parse described questionnaire into table
+ *   findChoices(qId,ver,sampleQ) discover where answer choices live
  *   readAnswers(qResp)         flatten questionnaire into readable table
  *   resolveAnswer(id)          lookup answer text from LOV
  *
@@ -221,6 +222,134 @@ globalThis.describeQuestionnaire = async function (payload) {
     return { status: "FAIL", error: e.message };
   }
 };
+
+/**
+ * Discover where answer choices (QuestionAnswerId values) live.
+ * Tries multiple approaches and logs OK/FAIL for each.
+ * Read-only discovery only.
+ */
+globalThis.findChoices = async function (questionnaireId, version, sampleQuestionId) {
+  const results = {
+    expandedDescribe: [],
+    questionAnswersLOV: null,
+    resourceEnumeration: null,
+  };
+
+  const indexUrl = `${location.origin}/hcmRestApi/indexSearch/questionnaire/describe`;
+
+  // Approach 1a: Try with includeChoices flag
+  dlog(`[findChoices 1a] trying includeChoices:true...`);
+  try {
+    const r = await fetch(indexUrl, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "Rest-Framework-Version": "9" },
+      body: JSON.stringify({ questionnaireId, version, includeChoices: true }),
+    });
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = text; }
+    const hasChoices = checkForChoices(body);
+    results.expandedDescribe.push({ variant: "includeChoices:true", status: r.ok ? "OK" : "FAIL", httpStatus: r.status, hasChoices, body });
+    dlog(`[findChoices 1a] ${r.ok ? "OK" : "FAIL"} - hasChoices: ${hasChoices}`);
+  } catch (e) {
+    results.expandedDescribe.push({ variant: "includeChoices:true", status: "FAIL", error: e.message });
+    dlog(`[findChoices 1a] FAIL -`, e.message);
+  }
+
+  // Approach 1b: Try with expand:"all"
+  dlog(`[findChoices 1b] trying expand:"all"...`);
+  try {
+    const r = await fetch(indexUrl, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "Rest-Framework-Version": "9" },
+      body: JSON.stringify({ questionnaireId, version, expand: "all" }),
+    });
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = text; }
+    const hasChoices = checkForChoices(body);
+    results.expandedDescribe.push({ variant: "expand:all", status: r.ok ? "OK" : "FAIL", httpStatus: r.status, hasChoices, body });
+    dlog(`[findChoices 1b] ${r.ok ? "OK" : "FAIL"} - hasChoices: ${hasChoices}`);
+  } catch (e) {
+    results.expandedDescribe.push({ variant: "expand:all", status: "FAIL", error: e.message });
+    dlog(`[findChoices 1b] FAIL -`, e.message);
+  }
+
+  // Approach 1c: Try with both flags
+  dlog(`[findChoices 1c] trying both flags...`);
+  try {
+    const r = await fetch(indexUrl, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", "Rest-Framework-Version": "9" },
+      body: JSON.stringify({ questionnaireId, version, includeChoices: true, expand: "all" }),
+    });
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = text; }
+    const hasChoices = checkForChoices(body);
+    results.expandedDescribe.push({ variant: "both flags", status: r.ok ? "OK" : "FAIL", httpStatus: r.status, hasChoices, body });
+    dlog(`[findChoices 1c] ${r.ok ? "OK" : "FAIL"} - hasChoices: ${hasChoices}`);
+  } catch (e) {
+    results.expandedDescribe.push({ variant: "both flags", status: "FAIL", error: e.message });
+    dlog(`[findChoices 1c] FAIL -`, e.message);
+  }
+
+  // Approach 2: questionAnswersLOV filtered by QuestionId
+  if (sampleQuestionId) {
+    dlog(`[findChoices 2] trying questionAnswersLOV?q=QuestionId=${sampleQuestionId}...`);
+    try {
+      const data = await api(`/questionAnswersLOV?q=QuestionId=${sampleQuestionId}&onlyData=true`);
+      results.questionAnswersLOV = { status: "OK", count: data.items?.length ?? 0, data };
+      dlog(`[findChoices 2] OK - ${data.items?.length ?? 0} answers found`);
+      if (data.items?.length) {
+        console.log("[orc] questionAnswersLOV items:", data.items);
+      }
+    } catch (e) {
+      results.questionAnswersLOV = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[findChoices 2] FAIL -`, e.message, e.body);
+    }
+  } else {
+    dlog(`[findChoices 2] skipped - no sampleQuestionId provided`);
+    results.questionAnswersLOV = { status: "SKIPPED", reason: "no sampleQuestionId" };
+  }
+
+  // Approach 3: Enumerate resources containing "nswer" or "hoice"
+  dlog(`[findChoices 3] enumerating answer/choice resources via /describe...`);
+  try {
+    const desc = await api("/describe");
+    const resources = desc.Resources || desc.resources || {};
+    const names = Object.keys(resources);
+    const answerResources = names.filter(n =>
+      n.toLowerCase().includes("nswer") || n.toLowerCase().includes("hoice")
+    );
+    results.resourceEnumeration = { status: "OK", answerResources };
+    console.log("[orc] Resources containing 'nswer' or 'hoice':", answerResources);
+  } catch (e) {
+    results.resourceEnumeration = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[findChoices 3] FAIL -`, e.message, e.body);
+  }
+
+  // Summary
+  console.log("\n=== FIND CHOICES SUMMARY ===");
+  console.table(results.expandedDescribe.map(r => ({ variant: r.variant, status: r.status, hasChoices: r.hasChoices })));
+  console.log("questionAnswersLOV:", results.questionAnswersLOV?.status, results.questionAnswersLOV?.count ?? "");
+  console.log("answerResources:", results.resourceEnumeration?.answerResources || "(failed)");
+
+  dlog(`[findChoices] complete`);
+  return results;
+};
+
+// Helper to check if a describe response contains choices
+function checkForChoices(body) {
+  const sections = body?.components?.schemas?.Questionnaire?.["x-hints"]?.sections;
+  if (!sections) return false;
+  for (const section of sections) {
+    for (const q of (section.questions || [])) {
+      if (q.choices || q.options || q.answerChoices || q.answers) return true;
+    }
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Debug / Inspection layer (read-only except draft creation)

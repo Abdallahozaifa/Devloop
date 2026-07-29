@@ -116,40 +116,41 @@ globalThis.describeDrafts = async function () {
 
   try {
     const d = await api("/recruitingICEJobApplicationDrafts/describe");
-    const res = d.Resources?.recruitingICEJobApplicationDrafts || d.Resources?.["recruitingICEJobApplicationDrafts"];
+    const r = d.Resources?.recruitingICEJobApplicationDrafts;
 
-    if (!res) {
+    if (!r) {
       console.warn("[orc] describeDrafts: resource not found in describe response");
       console.log("Raw describe:", d);
       return d;
     }
 
-    // FINDERS - is there ANY way to look one up besides PrimaryKey?
-    console.log("=== FINDERS (can we query drafts?) ===");
-    console.log(JSON.stringify(res.collection?.finders, null, 2));
+    // THE KEY QUESTION: DRAFT FINDERS
+    // If only PrimaryKey, discovery is impossible by design
+    console.log("=== DRAFT FINDERS (THE KEY QUESTION) ===");
+    console.log(JSON.stringify(r.collection?.finders, null, 2));
 
     // COLLECTION ACTIONS - is GET allowed, or POST-only?
-    console.log("\n=== COLLECTION ACTIONS (GET allowed?) ===");
-    console.log(JSON.stringify(res.collection?.actions, null, 2));
+    console.log("\n=== DRAFT COLLECTION ACTIONS ===");
+    console.log(JSON.stringify(r.collection?.actions, null, 2));
 
     // ITEM ACTIONS - can you GET one by id?
-    console.log("\n=== ITEM ACTIONS (GET by ID?) ===");
-    console.log(JSON.stringify(res.item?.actions, null, 2));
+    console.log("\n=== DRAFT ITEM ACTIONS ===");
+    console.log(JSON.stringify(r.item?.actions, null, 2));
 
-    // Check questionnaireResponses child
-    const childKey = "recruitingICEJobApplicationDrafts-questionnaireResponses";
-    const child = d.Resources?.[childKey];
-    console.log("\n=== CHILD: questionnaireResponses ===");
-    if (child) {
-      console.log("CHILD FINDERS:", JSON.stringify(child.collection?.finders, null, 2));
-      console.log("CHILD COLLECTION ACTIONS:", JSON.stringify(child.collection?.actions, null, 2));
+    // questionnaireResponses CHILD - accessed via r.children
+    const qrChild = r.children?.questionnaireResponses;
+    console.log("\n=== QR CHILD FINDERS ===");
+    if (qrChild) {
+      console.log(JSON.stringify(qrChild.collection?.finders, null, 2));
+      console.log("\n=== QR CHILD COLLECTION ACTIONS ===");
+      console.log(JSON.stringify(qrChild.collection?.actions, null, 2));
     } else {
-      console.log("Not in describe as separate resource. Check res.children:");
-      console.log(JSON.stringify(res.children, null, 2));
+      console.log("questionnaireResponses child not found. Available children:");
+      console.log(Object.keys(r.children || {}));
     }
 
     dlog(`[describeDrafts] complete`);
-    return { resource: res, child, raw: d };
+    return { drafts: r, qrChild, raw: d };
   } catch (e) {
     dlog(`[describeDrafts] FAIL -`, e.message, e.body);
     return { status: "FAIL", error: e.message, body: e.body };

@@ -569,6 +569,7 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
     reqNum,
     RequisitionId: null,
     questionnaireId: opts.questionnaireId || null,
+    questionnaireVersion: opts.version || null,
     draftId: null,
     answersStored: [],
     stages: {},
@@ -582,13 +583,12 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
   // STAGE 1: ELIGIBILITY
   console.log("\n--- STAGE 1: ELIGIBILITY ---");
   try {
-    const fields = "RequisitionId,RequisitionNumber,HasAppliedFlag,CandidateReapplyFlag,RequisitionValidFlag,QuestionnaireId";
+    const fields = "RequisitionId,RequisitionNumber,HasAppliedFlag,CandidateReapplyFlag,RequisitionValidFlag";
     const data = await api(
       `/recruitingOppMktJobDetails?finder=findByNumber;RequisitionNumber=${reqNum}&fields=${fields}&onlyData=true`
     );
     const item = data.items?.[0] ?? data;
     results.RequisitionId = item.RequisitionId;
-    results.questionnaireId = results.questionnaireId || item.QuestionnaireId;
 
     if (item.HasAppliedFlag === true) {
       console.log("STAGE 1: FAIL - Already applied (HasAppliedFlag=true)");
@@ -604,13 +604,69 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
     return results;
   }
 
+  // STAGE 1.5: RESOLVE QUESTIONNAIRE ID
+  console.log("\n--- STAGE 1.5: RESOLVE QUESTIONNAIRE ID ---");
+  if (!results.questionnaireId && results.RequisitionId) {
+    // Try findByRequisition first
+    try {
+      const qiData = await api(
+        `/questionnaireInstructions?finder=findByRequisition;RequisitionId=${results.RequisitionId}&onlyData=true`
+      );
+      const qiItem = qiData.items?.[0];
+      if (qiItem?.QuestionnaireId) {
+        results.questionnaireId = qiItem.QuestionnaireId;
+        results.questionnaireVersion = qiItem.VersionNumber || qiItem.QuestionnaireVersionNumber || 1;
+        console.log(`STAGE 1.5: PASS - QuestionnaireId=${results.questionnaireId}, Version=${results.questionnaireVersion}`);
+        results.stages.resolveQuestionnaire = { status: "PASS", data: qiItem };
+      } else {
+        console.log("STAGE 1.5: PARTIAL - Response OK but no QuestionnaireId found");
+        console.log("Response:", qiData);
+        results.stages.resolveQuestionnaire = { status: "PARTIAL", raw: qiData };
+      }
+    } catch (e) {
+      console.log(`STAGE 1.5: findByRequisition failed - ${e.message}`);
+      if (e.body) console.log("Error body (may list valid finders):", e.body);
+
+      // Try fallback finder
+      console.log("Trying fallback: findByQuestionnaireIdAndVersion...");
+      try {
+        const qiData2 = await api(
+          `/questionnaireInstructions?finder=findByQuestionnaire;RequisitionNumber=${reqNum}&onlyData=true`
+        );
+        const qiItem2 = qiData2.items?.[0];
+        if (qiItem2?.QuestionnaireId) {
+          results.questionnaireId = qiItem2.QuestionnaireId;
+          results.questionnaireVersion = qiItem2.VersionNumber || 1;
+          console.log(`STAGE 1.5: PASS (fallback) - QuestionnaireId=${results.questionnaireId}`);
+          results.stages.resolveQuestionnaire = { status: "PASS", data: qiItem2, usedFallback: true };
+        }
+      } catch (e2) {
+        console.log(`STAGE 1.5: Fallback also failed - ${e2.message}`);
+        if (e2.body) console.log("Error body:", e2.body);
+        results.stages.resolveQuestionnaire = { status: "FAIL", error: e.message, fallbackError: e2.message };
+      }
+    }
+  } else if (results.questionnaireId) {
+    console.log(`STAGE 1.5: SKIP - questionnaireId already provided: ${results.questionnaireId}`);
+    results.stages.resolveQuestionnaire = { status: "SKIP", reason: "already provided" };
+  }
+
+  // If we still don't have a questionnaireId, stop
+  if (!results.questionnaireId) {
+    console.log("\nSTAGE 1.5: FAIL - Could not resolve questionnaireId - need the correct finder");
+    console.log("Try: await api('/questionnaireInstructions/describe') to see available finders");
+    results.stages.resolveQuestionnaire = results.stages.resolveQuestionnaire || { status: "FAIL", reason: "could not resolve" };
+    return results;
+  }
+
   // STAGE 2: QUESTIONNAIRE READ
   console.log("\n--- STAGE 2: QUESTIONNAIRE READ ---");
   if (results.questionnaireId) {
     try {
+      const version = results.questionnaireVersion || opts.version || 1;
       const qRes = await describeQuestionnaire({
         questionnaireId: results.questionnaireId,
-        version: opts.version || 1,
+        version: version,
       });
       if (qRes.status === "OK" && qRes.questions?.length) {
         console.log(`STAGE 2: PASS - ${qRes.questions.length} questions found`);
@@ -635,9 +691,10 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
 
   // STAGE 3: DRAFT + ANSWERS
   console.log("\n--- STAGE 3: DRAFT + ANSWERS ---");
+  const qVersion = results.questionnaireVersion || opts.version || 1;
   try {
     // Try reversed order first (draft first, then QR) as it's more logical
-    const submitRes = await submitDraftWithAnswersReversed(reqNum, answers, opts.version || 1);
+    const submitRes = await submitDraftWithAnswersReversed(reqNum, answers, qVersion);
 
     if (submitRes.status === "OK" && submitRes.draftId) {
       console.log(`STAGE 3: PASS - Draft created, draftId=${submitRes.draftId}`);
@@ -651,7 +708,7 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
       results.stages.draftAnswers = { status: "FAIL", raw: submitRes };
       // Try the original order as fallback
       console.log("Trying original batch order...");
-      const submitRes2 = await submitDraftWithAnswers(reqNum, answers, null, opts.version || 1);
+      const submitRes2 = await submitDraftWithAnswers(reqNum, answers, null, qVersion);
       if (submitRes2.status === "OK" && submitRes2.draftId) {
         console.log(`STAGE 3: PASS (fallback) - Draft created, draftId=${submitRes2.draftId}`);
         results.draftId = submitRes2.draftId;

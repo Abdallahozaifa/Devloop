@@ -20,6 +20,7 @@
  *   inspect(reqNum)         full read chain for one requisition
  *   inspectDraft(draftId)   read a known draft's children directly
  *   createAndReadDraft(req) create draft + immediately read questionnaire
+ *   describeDrafts()        check finders/actions - is discovery possible?
  *   readAnswers(qResp)      flatten questionnaire into readable table
  *   resolveAnswer(id)       lookup answer text from LOV
  *
@@ -105,6 +106,55 @@ globalThis.batch = (parts) => api("/", {
 });
 
 globalThis.pause = () => new Promise(r => setTimeout(r, 2500 + Math.random() * 2500));
+
+/**
+ * Describe the drafts resource to see finders, collection actions, item actions.
+ * This definitively answers: is DraftId discovery possible, or POST-only by design?
+ */
+globalThis.describeDrafts = async function () {
+  dlog(`[describeDrafts] fetching /recruitingICEJobApplicationDrafts/describe...`);
+
+  try {
+    const d = await api("/recruitingICEJobApplicationDrafts/describe");
+    const res = d.Resources?.recruitingICEJobApplicationDrafts || d.Resources?.["recruitingICEJobApplicationDrafts"];
+
+    if (!res) {
+      console.warn("[orc] describeDrafts: resource not found in describe response");
+      console.log("Raw describe:", d);
+      return d;
+    }
+
+    // FINDERS - is there ANY way to look one up besides PrimaryKey?
+    console.log("=== FINDERS (can we query drafts?) ===");
+    console.log(JSON.stringify(res.collection?.finders, null, 2));
+
+    // COLLECTION ACTIONS - is GET allowed, or POST-only?
+    console.log("\n=== COLLECTION ACTIONS (GET allowed?) ===");
+    console.log(JSON.stringify(res.collection?.actions, null, 2));
+
+    // ITEM ACTIONS - can you GET one by id?
+    console.log("\n=== ITEM ACTIONS (GET by ID?) ===");
+    console.log(JSON.stringify(res.item?.actions, null, 2));
+
+    // Check questionnaireResponses child
+    const childKey = "recruitingICEJobApplicationDrafts-questionnaireResponses";
+    const child = d.Resources?.[childKey];
+    console.log("\n=== CHILD: questionnaireResponses ===");
+    if (child) {
+      console.log("CHILD FINDERS:", JSON.stringify(child.collection?.finders, null, 2));
+      console.log("CHILD COLLECTION ACTIONS:", JSON.stringify(child.collection?.actions, null, 2));
+    } else {
+      console.log("Not in describe as separate resource. Check res.children:");
+      console.log(JSON.stringify(res.children, null, 2));
+    }
+
+    dlog(`[describeDrafts] complete`);
+    return { resource: res, child, raw: d };
+  } catch (e) {
+    dlog(`[describeDrafts] FAIL -`, e.message, e.body);
+    return { status: "FAIL", error: e.message, body: e.body };
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Debug / Inspection layer (read-only except draft creation)
@@ -737,4 +787,4 @@ globalThis.phaseD = async function (subs, iAmSure) {
   return out;
 };
 
-console.log("loaded. await createAndReadDraft('REQ123') | await applyAnswers(draftId, questionnaire) | DEBUG=" + DEBUG);
+console.log("loaded. await describeDrafts() | await createAndReadDraft('REQ123') | DEBUG=" + DEBUG);

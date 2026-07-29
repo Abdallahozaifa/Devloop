@@ -15,7 +15,27 @@
  *   D  confirm          esign + CONFIRM. IRREVERSIBLE
  *
  * Run A, B, C, inspect, then D. Nothing chains past C automatically.
+ *
+ * DEBUG LAYER
+ *   inspect(reqNum)      full read chain for one requisition
+ *   readAnswers(qResp)   flatten questionnaire into readable table
  */
+
+// ---------------------------------------------------------------------------
+// Debug helpers
+// ---------------------------------------------------------------------------
+
+globalThis.DEBUG = true;
+
+globalThis.dlog = function (...args) {
+  if (globalThis.DEBUG) {
+    console.log("[orc]", ...args);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Environment setup
+// ---------------------------------------------------------------------------
 
 globalThis.ENV = globalThis.ENV || (function () {
   const rv = prompt("rv: deployment token — copy from any request URL, the part like rv:f06e81c8-...");
@@ -76,6 +96,158 @@ globalThis.batch = (parts) => api("/", {
 });
 
 globalThis.pause = () => new Promise(r => setTimeout(r, 2500 + Math.random() * 2500));
+
+// ---------------------------------------------------------------------------
+// Debug / Inspection layer (read-only except draft creation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Flatten questionnaire response into a readable table.
+ * Shows which questions have pre-filled answers vs blank.
+ */
+globalThis.readAnswers = function (questionnaireResponse) {
+  if (!questionnaireResponse || !Array.isArray(questionnaireResponse.items)) {
+    console.warn("[orc] readAnswers: no items array found");
+    return [];
+  }
+
+  const rows = questionnaireResponse.items.map(q => ({
+    QuestionCode: q.QuestionCode || "",
+    QuestionText: (q.QuestionText || "").substring(0, 60) + ((q.QuestionText || "").length > 60 ? "..." : ""),
+    QuestionId: q.QuestionId || null,
+    QuestionAnswerId: q.QuestionAnswerId || null,
+    AnswerList: q.AnswerList || null,
+    answered: (q.QuestionAnswerId != null) || (q.AnswerList != null),
+  }));
+
+  console.table(rows);
+  return rows;
+};
+
+/**
+ * Run the full read chain for one requisition.
+ * Steps: jobDetails -> createDraft -> findDraft (3 routes) -> questionnaire
+ */
+globalThis.inspect = async function (reqNum) {
+  const result = {
+    reqNum,
+    steps: {},
+    RequisitionId: null,
+    DraftId: null,
+    questionnaire: null,
+    answersTable: null,
+  };
+
+  // Step A: GET job details
+  dlog(`[step A] fetching job details for ${reqNum}...`);
+  try {
+    const fields = "RequisitionId,RequisitionNumber,HasAppliedFlag,CandidateReapplyFlag,RequisitionValidFlag";
+    const data = await api(
+      `/recruitingOppMktJobDetails?finder=findByNumber;RequisitionNumber=${reqNum}&fields=${fields}&onlyData=true`
+    );
+    const item = data.items?.[0] ?? data;
+    result.RequisitionId = item.RequisitionId;
+    result.steps.jobDetails = { status: "OK", data: item };
+    dlog(`[step A] OK - RequisitionId=${result.RequisitionId}`);
+  } catch (e) {
+    result.steps.jobDetails = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[step A] FAIL -`, e.message);
+    return result;
+  }
+
+  // Step B: POST draft (creates draft; response is empty, that's expected)
+  dlog(`[step B] creating draft for ${reqNum}...`);
+  try {
+    await api("/recruitingICEJobApplicationDrafts", {
+      method: "POST",
+      body: JSON.stringify({
+        Action: "SAVE_DRAFT",
+        RequisitionNumber: reqNum,
+        Content: JSON.stringify({ alternateEmail: "" }),
+      }),
+    });
+    result.steps.createDraft = { status: "OK", note: "empty response expected" };
+    dlog(`[step B] OK - draft created (empty response expected)`);
+  } catch (e) {
+    result.steps.createDraft = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[step B] FAIL -`, e.message);
+    // Continue anyway - draft might already exist
+  }
+
+  // Step C: Find DraftId via three routes
+  dlog(`[step C] finding DraftId via 3 routes...`);
+  result.steps.findDraft = { routes: {} };
+
+  // Route 1: by RequisitionNumber
+  try {
+    const data = await api(
+      `/recruitingICEJobApplicationDrafts?q=RequisitionNumber=${reqNum}&fields=IceDraftId&onlyData=true`
+    );
+    const draftId = data.items?.[0]?.IceDraftId;
+    result.steps.findDraft.routes.byReqNum = { status: draftId ? "OK" : "OK (no ID)", data, DraftId: draftId };
+    if (draftId && !result.DraftId) result.DraftId = draftId;
+    dlog(`[step C.1] byReqNum: ${draftId ? "OK - DraftId=" + draftId : "OK (no ID found)"}`);
+  } catch (e) {
+    result.steps.findDraft.routes.byReqNum = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[step C.1] byReqNum: FAIL -`, e.message);
+  }
+
+  // Route 2: by RequisitionId
+  if (result.RequisitionId) {
+    try {
+      const data = await api(
+        `/recruitingICEJobApplicationDrafts?q=RequisitionId=${result.RequisitionId}&fields=IceDraftId&onlyData=true`
+      );
+      const draftId = data.items?.[0]?.IceDraftId;
+      result.steps.findDraft.routes.byReqId = { status: draftId ? "OK" : "OK (no ID)", data, DraftId: draftId };
+      if (draftId && !result.DraftId) result.DraftId = draftId;
+      dlog(`[step C.2] byReqId: ${draftId ? "OK - DraftId=" + draftId : "OK (no ID found)"}`);
+    } catch (e) {
+      result.steps.findDraft.routes.byReqId = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[step C.2] byReqId: FAIL -`, e.message);
+    }
+
+    // Route 3: via candidateAssessments
+    try {
+      const data = await api(
+        `/recruitingUICandidateAssessments?finder=findByRequisitionId;RequisitionId=${result.RequisitionId}&onlyData=true`
+      );
+      const draftId = data.items?.[0]?.DraftId;
+      result.steps.findDraft.routes.byAssessments = { status: draftId ? "OK" : "OK (no ID)", data, DraftId: draftId };
+      if (draftId && !result.DraftId) result.DraftId = draftId;
+      dlog(`[step C.3] byAssessments: ${draftId ? "OK - DraftId=" + draftId : "OK (no ID found)"}`);
+    } catch (e) {
+      result.steps.findDraft.routes.byAssessments = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[step C.3] byAssessments: FAIL -`, e.message);
+    }
+  }
+
+  // Step D: GET questionnaire responses (if DraftId found)
+  if (result.DraftId) {
+    dlog(`[step D] fetching questionnaire for DraftId=${result.DraftId}...`);
+    try {
+      const data = await api(
+        `/recruitingICEJobApplicationDrafts/${result.DraftId}/child/questionnaireResponses?onlyData=true&expand=all&limit=50`
+      );
+      result.questionnaire = data;
+      result.steps.questionnaire = { status: "OK", count: data.items?.length ?? 0 };
+      dlog(`[step D] OK - ${data.items?.length ?? 0} questions found`);
+
+      // Auto-call readAnswers
+      dlog(`[step D] calling readAnswers()...`);
+      result.answersTable = readAnswers(data);
+    } catch (e) {
+      result.steps.questionnaire = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[step D] FAIL -`, e.message);
+    }
+  } else {
+    dlog(`[step D] skipped - no DraftId found`);
+    result.steps.questionnaire = { status: "SKIPPED", reason: "no DraftId found" };
+  }
+
+  dlog(`inspect() complete for ${reqNum}`);
+  return result;
+};
 
 // --- phase A ---------------------------------------------------------------
 
@@ -199,4 +371,4 @@ globalThis.phaseD = async function (subs, iAmSure) {
   return out;
 };
 
-console.log("loaded. run: await phaseA()");
+console.log("loaded. run: await phaseA()  |  await inspect('REQ123')  |  DEBUG=" + DEBUG);

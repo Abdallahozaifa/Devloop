@@ -108,49 +108,24 @@ globalThis.batch = (parts) => api("/", {
 globalThis.pause = () => new Promise(r => setTimeout(r, 2500 + Math.random() * 2500));
 
 /**
- * Describe the drafts resource to see finders, collection actions, item actions.
- * This definitively answers: is DraftId discovery possible, or POST-only by design?
+ * Describe the drafts resource to see finders and actions as flat name arrays.
+ * If DRAFT FINDERS is just ["PrimaryKey"], discovery is impossible by design.
  */
 globalThis.describeDrafts = async function () {
   dlog(`[describeDrafts] fetching /recruitingICEJobApplicationDrafts/describe...`);
 
   try {
     const d = await api("/recruitingICEJobApplicationDrafts/describe");
-    const r = d.Resources?.recruitingICEJobApplicationDrafts;
+    const r = d.Resources.recruitingICEJobApplicationDrafts;
 
-    if (!r) {
-      console.warn("[orc] describeDrafts: resource not found in describe response");
-      console.log("Raw describe:", d);
-      return d;
-    }
-
-    // THE KEY QUESTION: DRAFT FINDERS
-    // If only PrimaryKey, discovery is impossible by design
-    console.log("=== DRAFT FINDERS (THE KEY QUESTION) ===");
-    console.log(JSON.stringify(r.collection?.finders, null, 2));
-
-    // COLLECTION ACTIONS - is GET allowed, or POST-only?
-    console.log("\n=== DRAFT COLLECTION ACTIONS ===");
-    console.log(JSON.stringify(r.collection?.actions, null, 2));
-
-    // ITEM ACTIONS - can you GET one by id?
-    console.log("\n=== DRAFT ITEM ACTIONS ===");
-    console.log(JSON.stringify(r.item?.actions, null, 2));
-
-    // questionnaireResponses CHILD - accessed via r.children
-    const qrChild = r.children?.questionnaireResponses;
-    console.log("\n=== QR CHILD FINDERS ===");
-    if (qrChild) {
-      console.log(JSON.stringify(qrChild.collection?.finders, null, 2));
-      console.log("\n=== QR CHILD COLLECTION ACTIONS ===");
-      console.log(JSON.stringify(qrChild.collection?.actions, null, 2));
-    } else {
-      console.log("questionnaireResponses child not found. Available children:");
-      console.log(Object.keys(r.children || {}));
-    }
+    console.log("DRAFT FINDERS:", r.collection?.finders?.map(f => f.name) || "(none)");
+    console.log("DRAFT COLLECTION ACTIONS:", r.collection?.actions?.map(a => a.name) || "(none)");
+    console.log("DRAFT ITEM ACTIONS:", r.item?.actions?.map(a => a.name) || "(none)");
+    console.log("QR CHILD FINDERS:", r.children?.questionnaireResponses?.collection?.finders?.map(f => f.name) || "(none)");
+    console.log("QR CHILD ITEM ACTIONS:", r.children?.questionnaireResponses?.item?.actions?.map(a => a.name) || "(none)");
 
     dlog(`[describeDrafts] complete`);
-    return { drafts: r, qrChild, raw: d };
+    return r;
   } catch (e) {
     dlog(`[describeDrafts] FAIL -`, e.message, e.body);
     return { status: "FAIL", error: e.message, body: e.body };

@@ -17,12 +17,14 @@
  * Run A, B, C, inspect, then D. Nothing chains past C automatically.
  *
  * DEBUG LAYER
- *   inspect(reqNum)         full read chain for one requisition
- *   inspectDraft(draftId)   read a known draft's children directly
- *   createAndReadDraft(req) create draft + immediately read questionnaire
- *   describeDrafts()        check finders/actions - is discovery possible?
- *   readAnswers(qResp)      flatten questionnaire into readable table
- *   resolveAnswer(id)       lookup answer text from LOV
+ *   inspect(reqNum)            full read chain for one requisition
+ *   inspectDraft(draftId)      read a known draft's children directly
+ *   createAndReadDraft(req)    create draft + immediately read questionnaire
+ *   describeDrafts()           check finders/actions - is discovery possible?
+ *   describeQuestionnaire(p)   POST to indexSearch endpoint for full Q content
+ *   readQuestionnaireContent() parse described questionnaire into table
+ *   readAnswers(qResp)         flatten questionnaire into readable table
+ *   resolveAnswer(id)          lookup answer text from LOV
  *
  * ANSWER WRITE LAYER
  *   setAnswer(...)          write a single answer to a live draft
@@ -129,6 +131,94 @@ globalThis.describeDrafts = async function () {
   } catch (e) {
     dlog(`[describeDrafts] FAIL -`, e.message, e.body);
     return { status: "FAIL", error: e.message, body: e.body };
+  }
+};
+
+/**
+ * Parse a described questionnaire structure and console.table the questions.
+ * Walks components.schemas.Questionnaire["x-hints"].sections[].questions[]
+ */
+globalThis.readQuestionnaireContent = function (described) {
+  const sections = described?.components?.schemas?.Questionnaire?.["x-hints"]?.sections;
+
+  if (!sections || !Array.isArray(sections)) {
+    console.warn("[orc] readQuestionnaireContent: no sections found. Raw structure:");
+    console.log(described);
+    return [];
+  }
+
+  console.log("[orc] Raw sections:", sections);
+
+  const rows = [];
+  for (const section of sections) {
+    const questions = section.questions || [];
+    for (const q of questions) {
+      // Extract answer choices/options if present
+      let choices = null;
+      if (q.choices) choices = q.choices;
+      else if (q.options) choices = q.options;
+      else if (q.answerChoices) choices = q.answerChoices;
+      else if (q.answers) choices = q.answers;
+
+      rows.push({
+        questionId: q.questionId || q.QuestionId || null,
+        questionnaireQuestionId: q.questionnaireQuestionId || q.QuestionnaireQuestionId || null,
+        title: q.title || q.questionText || q.QuestionText || "",  // NOT truncated
+        renderType: q.renderType || q.type || null,
+        choices: choices ? JSON.stringify(choices) : null,
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    console.warn("[orc] readQuestionnaireContent: no questions found in sections");
+  } else {
+    console.table(rows);
+  }
+
+  return rows;
+};
+
+/**
+ * POST to the indexSearch questionnaire/describe endpoint.
+ * This returns full questionnaire content (questions + answer choices) WITHOUT needing a draft.
+ * Payload shape varies - pass whatever the captured request used (e.g. {questionnaireId, version}).
+ */
+globalThis.describeQuestionnaire = async function (payload) {
+  const url = `${location.origin}/hcmRestApi/indexSearch/questionnaire/describe`;
+  dlog(`[describeQuestionnaire] POST ${url}`);
+  dlog(`[describeQuestionnaire] payload:`, payload);
+
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "Rest-Framework-Version": "9",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await r.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+
+    if (!r.ok) {
+      dlog(`[describeQuestionnaire] FAIL - HTTP ${r.status}`, body);
+      return { status: "FAIL", httpStatus: r.status, body };
+    }
+
+    dlog(`[describeQuestionnaire] OK`);
+    console.log("[orc] describeQuestionnaire response:", body);
+
+    // Auto-call readQuestionnaireContent
+    const questions = readQuestionnaireContent(body);
+
+    return { status: "OK", raw: body, questions };
+  } catch (e) {
+    dlog(`[describeQuestionnaire] FAIL -`, e.message);
+    return { status: "FAIL", error: e.message };
   }
 };
 

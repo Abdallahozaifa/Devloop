@@ -49,6 +49,81 @@ globalThis.dlog = function (...args) {
   }
 };
 
+/**
+ * Debug: Test recruitingICEApplyFlows endpoint directly.
+ * This is the SPA's "start application" resource - should contain questionnaireId.
+ * @param {string} requisitionId - The RequisitionId (numeric ID, not the req number)
+ */
+globalThis.debugApplyFlows = async function (requisitionId) {
+  console.log("\n=== DEBUG: recruitingICEApplyFlows ===");
+  console.log(`RequisitionId: ${requisitionId}`);
+
+  const attempts = [];
+
+  // Attempt 1: findByRequisitionId
+  console.log("\n[1] Trying finder=findByRequisitionId...");
+  try {
+    const data = await api(
+      `/recruitingICEApplyFlows?finder=findByRequisitionId;RequisitionId=${requisitionId}&onlyData=true`
+    );
+    console.log("SUCCESS - Response:", data);
+    const item = data.items?.[0] ?? data;
+    console.log("First item fields:", Object.keys(item));
+    console.log("Full item:", item);
+    attempts.push({ finder: "findByRequisitionId", status: "OK", data: item });
+  } catch (e) {
+    console.log(`FAIL - ${e.message}`);
+    if (e.body) {
+      console.log("Error body (check for valid finders):", e.body);
+    }
+    attempts.push({ finder: "findByRequisitionId", status: "FAIL", error: e.message, body: e.body });
+  }
+
+  // Attempt 2: findByRequisition (alternate name)
+  console.log("\n[2] Trying finder=findByRequisition...");
+  try {
+    const data = await api(
+      `/recruitingICEApplyFlows?finder=findByRequisition;RequisitionId=${requisitionId}&onlyData=true`
+    );
+    console.log("SUCCESS - Response:", data);
+    attempts.push({ finder: "findByRequisition", status: "OK", data });
+  } catch (e) {
+    console.log(`FAIL - ${e.message}`);
+    attempts.push({ finder: "findByRequisition", status: "FAIL", error: e.message });
+  }
+
+  // Attempt 3: No finder, just query param
+  console.log("\n[3] Trying q=RequisitionId=...");
+  try {
+    const data = await api(
+      `/recruitingICEApplyFlows?q=RequisitionId=${requisitionId}&onlyData=true`
+    );
+    console.log("SUCCESS - Response:", data);
+    attempts.push({ finder: "q=RequisitionId", status: "OK", data });
+  } catch (e) {
+    console.log(`FAIL - ${e.message}`);
+    attempts.push({ finder: "q=RequisitionId", status: "FAIL", error: e.message });
+  }
+
+  // Attempt 4: Describe the resource to see available finders
+  console.log("\n[4] Describing resource to find valid finders...");
+  try {
+    const desc = await api("/recruitingICEApplyFlows/describe");
+    const res = desc.Resources?.recruitingICEApplyFlows || desc;
+    const finders = res.collection?.finders?.map(f => f.name) || [];
+    console.log("Available finders:", finders);
+    attempts.push({ finder: "describe", status: "OK", finders });
+  } catch (e) {
+    console.log(`FAIL - ${e.message}`);
+    attempts.push({ finder: "describe", status: "FAIL", error: e.message });
+  }
+
+  console.log("\n=== SUMMARY ===");
+  console.table(attempts.map(a => ({ finder: a.finder, status: a.status, finders: a.finders?.join(", ") || "" })));
+
+  return attempts;
+};
+
 // ---------------------------------------------------------------------------
 // Environment setup
 // ---------------------------------------------------------------------------

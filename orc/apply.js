@@ -607,44 +607,84 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
   // STAGE 1.5: RESOLVE QUESTIONNAIRE ID
   console.log("\n--- STAGE 1.5: RESOLVE QUESTIONNAIRE ID ---");
   if (!results.questionnaireId && results.RequisitionId) {
-    // Try findByRequisition first
+    const attempts = [];
+
+    // Attempt 1: recruitingICEApplyFlows - the SPA's "start application" resource
+    console.log("Trying recruitingICEApplyFlows...");
     try {
-      const qiData = await api(
-        `/questionnaireInstructions?finder=findByRequisition;RequisitionId=${results.RequisitionId}&onlyData=true`
+      const afData = await api(
+        `/recruitingICEApplyFlows?finder=findByRequisitionId;RequisitionId=${results.RequisitionId}&onlyData=true`
       );
-      const qiItem = qiData.items?.[0];
-      if (qiItem?.QuestionnaireId) {
-        results.questionnaireId = qiItem.QuestionnaireId;
-        results.questionnaireVersion = qiItem.VersionNumber || qiItem.QuestionnaireVersionNumber || 1;
-        console.log(`STAGE 1.5: PASS - QuestionnaireId=${results.questionnaireId}, Version=${results.questionnaireVersion}`);
-        results.stages.resolveQuestionnaire = { status: "PASS", data: qiItem };
-      } else {
-        console.log("STAGE 1.5: PARTIAL - Response OK but no QuestionnaireId found");
-        console.log("Response:", qiData);
-        results.stages.resolveQuestionnaire = { status: "PARTIAL", raw: qiData };
+      const afItem = afData.items?.[0] ?? afData;
+      console.log("applyFlows response:", afItem);
+      attempts.push({ route: "applyFlows", status: "OK", data: afItem });
+
+      // Look for QuestionnaireId in various possible field names
+      const qId = afItem.QuestionnaireId || afItem.questionnaireId || afItem.InternalQuestionnaireId;
+      const qVer = afItem.QuestionnaireVersionNumber || afItem.VersionNumber || afItem.questionnaireVersion || 1;
+      if (qId) {
+        results.questionnaireId = qId;
+        results.questionnaireVersion = qVer;
+        console.log(`STAGE 1.5: PASS (applyFlows) - QuestionnaireId=${qId}, Version=${qVer}`);
+        results.stages.resolveQuestionnaire = { status: "PASS", source: "applyFlows", data: afItem };
       }
     } catch (e) {
-      console.log(`STAGE 1.5: findByRequisition failed - ${e.message}`);
+      console.log(`applyFlows failed - ${e.message}`);
       if (e.body) console.log("Error body (may list valid finders):", e.body);
+      attempts.push({ route: "applyFlows", status: "FAIL", error: e.message, body: e.body });
+    }
 
-      // Try fallback finder
-      console.log("Trying fallback: findByQuestionnaireIdAndVersion...");
+    // Attempt 2: recruitingICEApplyFlows with RequisitionNumber finder (if RequisitionId failed)
+    if (!results.questionnaireId) {
+      console.log("Trying recruitingICEApplyFlows by RequisitionNumber...");
       try {
-        const qiData2 = await api(
-          `/questionnaireInstructions?finder=findByQuestionnaire;RequisitionNumber=${reqNum}&onlyData=true`
+        const afData2 = await api(
+          `/recruitingICEApplyFlows?finder=findByRequisitionNumber;RequisitionNumber=${reqNum}&onlyData=true`
         );
-        const qiItem2 = qiData2.items?.[0];
-        if (qiItem2?.QuestionnaireId) {
-          results.questionnaireId = qiItem2.QuestionnaireId;
-          results.questionnaireVersion = qiItem2.VersionNumber || 1;
-          console.log(`STAGE 1.5: PASS (fallback) - QuestionnaireId=${results.questionnaireId}`);
-          results.stages.resolveQuestionnaire = { status: "PASS", data: qiItem2, usedFallback: true };
+        const afItem2 = afData2.items?.[0] ?? afData2;
+        console.log("applyFlows (byNumber) response:", afItem2);
+        attempts.push({ route: "applyFlows-byNumber", status: "OK", data: afItem2 });
+
+        const qId = afItem2.QuestionnaireId || afItem2.questionnaireId || afItem2.InternalQuestionnaireId;
+        if (qId) {
+          results.questionnaireId = qId;
+          results.questionnaireVersion = afItem2.QuestionnaireVersionNumber || 1;
+          console.log(`STAGE 1.5: PASS (applyFlows-byNumber) - QuestionnaireId=${qId}`);
+          results.stages.resolveQuestionnaire = { status: "PASS", source: "applyFlows-byNumber", data: afItem2 };
         }
       } catch (e2) {
-        console.log(`STAGE 1.5: Fallback also failed - ${e2.message}`);
+        console.log(`applyFlows by RequisitionNumber failed - ${e2.message}`);
         if (e2.body) console.log("Error body:", e2.body);
-        results.stages.resolveQuestionnaire = { status: "FAIL", error: e.message, fallbackError: e2.message };
+        attempts.push({ route: "applyFlows-byNumber", status: "FAIL", error: e2.message });
       }
+    }
+
+    // Attempt 3: questionnaireInstructions (unlikely but try)
+    if (!results.questionnaireId) {
+      console.log("Trying questionnaireInstructions...");
+      try {
+        const qiData = await api(
+          `/questionnaireInstructions?finder=findByRequisition;RequisitionId=${results.RequisitionId}&onlyData=true`
+        );
+        const qiItem = qiData.items?.[0];
+        attempts.push({ route: "questionnaireInstructions", status: "OK", data: qiItem });
+        if (qiItem?.QuestionnaireId) {
+          results.questionnaireId = qiItem.QuestionnaireId;
+          results.questionnaireVersion = qiItem.VersionNumber || 1;
+          console.log(`STAGE 1.5: PASS (questionnaireInstructions) - QuestionnaireId=${results.questionnaireId}`);
+          results.stages.resolveQuestionnaire = { status: "PASS", source: "questionnaireInstructions", data: qiItem };
+        }
+      } catch (e3) {
+        console.log(`questionnaireInstructions failed - ${e3.message}`);
+        attempts.push({ route: "questionnaireInstructions", status: "FAIL", error: e3.message });
+      }
+    }
+
+    // Log all attempts for debugging
+    if (!results.questionnaireId) {
+      console.log("\nAll attempts:");
+      console.table(attempts.map(a => ({ route: a.route, status: a.status })));
+      results.stages.resolveQuestionnaire = { status: "FAIL", attempts };
     }
   } else if (results.questionnaireId) {
     console.log(`STAGE 1.5: SKIP - questionnaireId already provided: ${results.questionnaireId}`);
@@ -653,8 +693,8 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
 
   // If we still don't have a questionnaireId, stop
   if (!results.questionnaireId) {
-    console.log("\nSTAGE 1.5: FAIL - Could not resolve questionnaireId - need the correct finder");
-    console.log("Try: await api('/questionnaireInstructions/describe') to see available finders");
+    console.log("\nSTAGE 1.5: FAIL - Could not resolve questionnaireId");
+    console.log("Try manually: await api('/recruitingICEApplyFlows/describe') to see finders");
     results.stages.resolveQuestionnaire = results.stages.resolveQuestionnaire || { status: "FAIL", reason: "could not resolve" };
     return results;
   }

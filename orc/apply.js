@@ -17,10 +17,15 @@
  * Run A, B, C, inspect, then D. Nothing chains past C automatically.
  *
  * DEBUG LAYER
- *   inspect(reqNum)       full read chain for one requisition
- *   inspectDraft(draftId) read a known draft's children directly
- *   readAnswers(qResp)    flatten questionnaire into readable table
- *   resolveAnswer(id)     lookup answer text from LOV
+ *   inspect(reqNum)         full read chain for one requisition
+ *   inspectDraft(draftId)   read a known draft's children directly
+ *   createAndReadDraft(req) create draft + immediately read questionnaire
+ *   readAnswers(qResp)      flatten questionnaire into readable table
+ *   resolveAnswer(id)       lookup answer text from LOV
+ *
+ * ANSWER WRITE LAYER
+ *   setAnswer(...)          write a single answer to a live draft
+ *   applyAnswers(draftId,q) apply all ANSWER_MAP entries to a draft
  */
 
 // ---------------------------------------------------------------------------
@@ -60,13 +65,15 @@ globalThis.REQS = globalThis.REQS || [
   // paste your requisition numbers here, or set globalThis.REQS before loading
 ];
 /**
- * Your answers, keyed by QuestionCode. Fill this in from phase B output.
+ * Your answers, keyed by QuestionCode -> QuestionAnswerId.
+ * Fill this in AFTER reading the rendered questions via createAndReadDraft().
  * These are regulatory attestations — set them yourself, once, having read
- * the question text that phase B prints.
+ * the full question text. applyAnswers() uses this map to write answers.
+ *
+ * Example:
+ *   ANSWER_MAP["IRC_WORK_AUTH_US"] = 300000123456789;
  */
-globalThis.ANSWER_MAP = {
-  // "QUESTION_CODE_HERE": 300000000000000,   // fill from phase B output
-};
+globalThis.ANSWER_MAP = globalThis.ANSWER_MAP || {};
 
 // ---------------------------------------------------------------------------
 
@@ -219,6 +226,212 @@ globalThis.inspectDraft = async function (draftId) {
 
   dlog(`inspectDraft() complete for ${draftId}`);
   return result;
+};
+
+/**
+ * Create a draft and IMMEDIATELY read its questionnaire while it's live.
+ * DraftId can only be captured at creation time via batch response.
+ * After CREATE_FROM_DRAFT the draft empties out and questionnaire is gone.
+ */
+globalThis.createAndReadDraft = async function (reqNum) {
+  const result = {
+    reqNum,
+    steps: {},
+    draftId: null,
+    rawQuestionnaire: null,
+    answers: null,
+  };
+
+  // Step A: POST to create draft
+  dlog(`[createAndReadDraft A] creating draft for ${reqNum}...`);
+  try {
+    const createRes = await api("/recruitingICEJobApplicationDrafts", {
+      method: "POST",
+      body: JSON.stringify({
+        Action: "SAVE_DRAFT",
+        RequisitionNumber: reqNum,
+        Content: JSON.stringify({ alternateEmail: "" }),
+      }),
+    });
+    result.steps.createDraft = { status: "OK", response: createRes };
+    dlog(`[createAndReadDraft A] OK - draft POST response:`, createRes);
+    // Try to extract draftId from response (may be empty)
+    if (createRes?.IceDraftId) {
+      result.draftId = createRes.IceDraftId;
+      dlog(`[createAndReadDraft A] got IceDraftId from response:`, result.draftId);
+    }
+  } catch (e) {
+    result.steps.createDraft = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[createAndReadDraft A] FAIL -`, e.message, e.body);
+    return result;
+  }
+
+  // Step B: Batch read to try to get the draft back with its ID
+  dlog(`[createAndReadDraft B] batch read to find draft...`);
+  try {
+    const batchRes = await batch([
+      {
+        id: "getDraft",
+        path: `/recruitingICEJobApplicationDrafts?q=RequisitionNumber=${reqNum}&fields=IceDraftId,RequisitionNumber&onlyData=true`,
+        operation: "get",
+      },
+    ]);
+    result.steps.batchRead = { status: "OK", response: batchRes };
+    dlog(`[createAndReadDraft B] batch response:`, batchRes);
+
+    // Extract draftId from batch response
+    const draftPart = batchRes?.parts?.find(p => p.id === "getDraft");
+    const draftId = draftPart?.payload?.items?.[0]?.IceDraftId;
+    if (draftId && !result.draftId) {
+      result.draftId = draftId;
+      dlog(`[createAndReadDraft B] got IceDraftId from batch:`, result.draftId);
+    }
+  } catch (e) {
+    result.steps.batchRead = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[createAndReadDraft B] FAIL -`, e.message, e.body);
+  }
+
+  // Step C: If we have a draftId, immediately read questionnaireResponses
+  if (result.draftId) {
+    dlog(`[createAndReadDraft C] reading questionnaireResponses for draftId=${result.draftId}...`);
+    try {
+      const qData = await api(
+        `/recruitingICEJobApplicationDrafts/${result.draftId}/child/questionnaireResponses?onlyData=true&expand=all&limit=50`
+      );
+      result.rawQuestionnaire = qData;
+      result.steps.readQuestionnaire = { status: "OK", count: qData.items?.length ?? 0 };
+      dlog(`[createAndReadDraft C] OK - ${qData.items?.length ?? 0} items`);
+      console.log("[orc] Raw questionnaire:", qData);
+
+      // Run readAnswers
+      dlog(`[createAndReadDraft C] calling readAnswers()...`);
+      result.answers = readAnswers(qData);
+    } catch (e) {
+      result.steps.readQuestionnaire = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[createAndReadDraft C] FAIL -`, e.message, e.body);
+    }
+  } else {
+    dlog(`[createAndReadDraft C] skipped - no draftId obtained`);
+    result.steps.readQuestionnaire = { status: "SKIPPED", reason: "no draftId" };
+  }
+
+  dlog(`createAndReadDraft() complete for ${reqNum}`);
+  return result;
+};
+
+/**
+ * Write a single answer to a live draft's questionnaire.
+ * Mirrors the SPA's batch write shape for questionResponses.
+ */
+globalThis.setAnswer = async function (draftId, questionnaireResponseId, questionResponseId, questionnaireQuestionId, questionAnswerId) {
+  dlog(`[setAnswer] writing answer to draft ${draftId}...`);
+  dlog(`[setAnswer] questionnaireResponseId=${questionnaireResponseId}, questionResponseId=${questionResponseId}`);
+  dlog(`[setAnswer] questionnaireQuestionId=${questionnaireQuestionId}, questionAnswerId=${questionAnswerId}`);
+
+  // Build the batch payload matching SPA's shape
+  const batchPayload = {
+    parts: [
+      {
+        id: "setAnswer",
+        path: `${RESOURCE_ROOT}/recruitingICEJobApplicationDrafts/${draftId}/child/questionnaireResponses/${questionnaireResponseId}/child/questionResponses/${questionResponseId}`,
+        operation: "update",
+        payload: {
+          QuestionnaireQuestionId: questionnaireQuestionId,
+          QuestionAnswerId: questionAnswerId,
+        },
+      },
+    ],
+  };
+
+  dlog(`[setAnswer] request body:`, JSON.stringify(batchPayload, null, 2));
+
+  try {
+    const res = await fetch(`${BASE}/`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/vnd.oracle.adf.batch+json",
+        "Rest-Framework-Version": "9",
+      },
+      body: JSON.stringify(batchPayload),
+    });
+    const text = await res.text();
+    let body;
+    try { body = JSON.parse(text); } catch { body = text; }
+
+    if (!res.ok) {
+      dlog(`[setAnswer] FAIL - HTTP ${res.status}`, body);
+      return { status: "FAIL", httpStatus: res.status, body };
+    }
+
+    dlog(`[setAnswer] OK - response:`, body);
+    console.log("[orc] setAnswer response:", body);
+    return { status: "OK", response: body };
+  } catch (e) {
+    dlog(`[setAnswer] FAIL -`, e.message);
+    return { status: "FAIL", error: e.message };
+  }
+};
+
+/**
+ * Apply all ANSWER_MAP entries to a live draft's questionnaire.
+ * Iterates questions, looks up QuestionCode in ANSWER_MAP, calls setAnswer for matches.
+ * Skips and warns on any question whose code is NOT in ANSWER_MAP (never guesses).
+ */
+globalThis.applyAnswers = async function (draftId, questionnaire) {
+  dlog(`[applyAnswers] applying ANSWER_MAP to draft ${draftId}...`);
+
+  if (!questionnaire?.items?.length) {
+    console.warn("[orc] applyAnswers: no questionnaire items to process");
+    return { status: "FAIL", reason: "no questionnaire items" };
+  }
+
+  const results = [];
+
+  for (const qrItem of questionnaire.items) {
+    const questionnaireResponseId = qrItem.QuestionnaireResponseId || qrItem.IceQuestionnaireResponseId;
+
+    // Get questions from nested structure
+    let questions = [];
+    if (qrItem.questionResponses?.items?.length) {
+      questions = qrItem.questionResponses.items;
+    } else if (Array.isArray(qrItem.questionResponses)) {
+      questions = qrItem.questionResponses;
+    }
+
+    for (const q of questions) {
+      const code = q.QuestionCode;
+      const questionResponseId = q.QuestionResponseId || q.IceQuestionResponseId;
+      const questionnaireQuestionId = q.QuestionnaireQuestionId;
+
+      if (!code) {
+        dlog(`[applyAnswers] skipping question with no QuestionCode:`, q);
+        continue;
+      }
+
+      if (!(code in ANSWER_MAP)) {
+        console.warn(`[orc] applyAnswers: QuestionCode "${code}" not in ANSWER_MAP - skipping (never guess)`);
+        results.push({ QuestionCode: code, status: "SKIPPED", reason: "not in ANSWER_MAP" });
+        continue;
+      }
+
+      const answerId = ANSWER_MAP[code];
+      dlog(`[applyAnswers] setting ${code} -> ${answerId}`);
+
+      try {
+        const res = await setAnswer(draftId, questionnaireResponseId, questionResponseId, questionnaireQuestionId, answerId);
+        results.push({ QuestionCode: code, status: res.status, response: res });
+      } catch (e) {
+        results.push({ QuestionCode: code, status: "FAIL", error: e.message });
+      }
+
+      await pause();
+    }
+  }
+
+  console.table(results.map(r => ({ QuestionCode: r.QuestionCode, status: r.status, reason: r.reason || "" })));
+  dlog(`[applyAnswers] complete - ${results.length} questions processed`);
+  return { status: "OK", results };
 };
 
 /**
@@ -524,4 +737,4 @@ globalThis.phaseD = async function (subs, iAmSure) {
   return out;
 };
 
-console.log("loaded. run: await phaseA()  |  await inspect('REQ123')  |  await inspectDraft('DRAFT_ID')  |  DEBUG=" + DEBUG);
+console.log("loaded. await createAndReadDraft('REQ123') | await applyAnswers(draftId, questionnaire) | DEBUG=" + DEBUG);

@@ -17,8 +17,10 @@
  * Run A, B, C, inspect, then D. Nothing chains past C automatically.
  *
  * DEBUG LAYER
- *   inspect(reqNum)      full read chain for one requisition
- *   readAnswers(qResp)   flatten questionnaire into readable table
+ *   inspect(reqNum)       full read chain for one requisition
+ *   inspectDraft(draftId) read a known draft's children directly
+ *   readAnswers(qResp)    flatten questionnaire into readable table
+ *   resolveAnswer(id)     lookup answer text from LOV
  */
 
 // ---------------------------------------------------------------------------
@@ -104,16 +106,38 @@ globalThis.pause = () => new Promise(r => setTimeout(r, 2500 + Math.random() * 2
 /**
  * Flatten questionnaire response into a readable table.
  * Shows which questions have pre-filled answers vs blank.
+ * Handles nested structures: questionResponses.items[] or questionResponses[] directly.
  */
 globalThis.readAnswers = function (questionnaireResponse) {
-  if (!questionnaireResponse || !Array.isArray(questionnaireResponse.items)) {
-    console.warn("[orc] readAnswers: no items array found");
+  let questions = [];
+
+  // Try to extract questions from various nested structures
+  if (questionnaireResponse?.items?.length) {
+    for (const item of questionnaireResponse.items) {
+      // Direct question properties on item
+      if (item.QuestionCode || item.QuestionId) {
+        questions.push(item);
+      }
+      // Nested questionResponses.items[]
+      if (item.questionResponses?.items?.length) {
+        questions.push(...item.questionResponses.items);
+      }
+      // Nested questionResponses[] (array directly)
+      if (Array.isArray(item.questionResponses) && item.questionResponses.length) {
+        questions.push(...item.questionResponses);
+      }
+    }
+  }
+
+  if (questions.length === 0) {
+    console.warn("[orc] readAnswers: no questions found. Raw structure:");
+    console.log(questionnaireResponse);
     return [];
   }
 
-  const rows = questionnaireResponse.items.map(q => ({
+  const rows = questions.map(q => ({
     QuestionCode: q.QuestionCode || "",
-    QuestionText: (q.QuestionText || "").substring(0, 60) + ((q.QuestionText || "").length > 60 ? "..." : ""),
+    QuestionText: (q.QuestionText || "").substring(0, 100) + ((q.QuestionText || "").length > 100 ? "..." : ""),
     QuestionId: q.QuestionId || null,
     QuestionAnswerId: q.QuestionAnswerId || null,
     AnswerList: q.AnswerList || null,
@@ -122,6 +146,79 @@ globalThis.readAnswers = function (questionnaireResponse) {
 
   console.table(rows);
   return rows;
+};
+
+/**
+ * Lookup answer text from questionAnswersLOV.
+ * May return 403 - if so, logs and moves on.
+ */
+globalThis.resolveAnswer = async function (questionAnswerId) {
+  dlog(`[resolveAnswer] looking up QuestionAnswerId=${questionAnswerId}...`);
+  try {
+    const data = await api(`/questionAnswersLOV?q=QuestionAnswerId=${questionAnswerId}&onlyData=true`);
+    const item = data.items?.[0];
+    if (item) {
+      dlog(`[resolveAnswer] OK - LongText:`, item.LongText || item.AnswerText || item);
+      console.log("[orc] Answer text:", item.LongText || item.AnswerText || JSON.stringify(item));
+    } else {
+      dlog(`[resolveAnswer] OK but no items returned`);
+    }
+    return { status: "OK", data };
+  } catch (e) {
+    dlog(`[resolveAnswer] FAIL -`, e.message, e.body);
+    console.warn("[orc] resolveAnswer failed (may be 403):", e.message);
+    return { status: "FAIL", error: e.message, body: e.body };
+  }
+};
+
+/**
+ * Inspect a known draft directly by ID, bypassing discovery.
+ * Read-only - does NOT create drafts.
+ */
+globalThis.inspectDraft = async function (draftId) {
+  const result = {
+    draftId,
+    steps: {},
+    questionnaireResponses: null,
+    attachments: null,
+    answersTable: null,
+  };
+
+  // Step A: GET questionnaireResponses
+  dlog(`[inspectDraft A] fetching questionnaireResponses for draftId=${draftId}...`);
+  try {
+    const data = await api(
+      `/recruitingICEJobApplicationDrafts/${draftId}/child/questionnaireResponses?onlyData=true&expand=all&limit=50`
+    );
+    result.questionnaireResponses = data;
+    result.steps.questionnaireResponses = { status: "OK", count: data.items?.length ?? 0 };
+    dlog(`[inspectDraft A] OK - ${data.items?.length ?? 0} items`);
+    console.log("[orc] Raw questionnaireResponses:", data);
+
+    // Run readAnswers
+    dlog(`[inspectDraft A] calling readAnswers()...`);
+    result.answersTable = readAnswers(data);
+  } catch (e) {
+    result.steps.questionnaireResponses = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[inspectDraft A] FAIL -`, e.message, e.body);
+  }
+
+  // Step B: GET attachments (sanity check draft is live)
+  dlog(`[inspectDraft B] fetching attachments for draftId=${draftId}...`);
+  try {
+    const data = await api(
+      `/recruitingICEJobApplicationDrafts/${draftId}/child/attachments?onlyData=true`
+    );
+    result.attachments = data;
+    result.steps.attachments = { status: "OK", count: data.items?.length ?? 0 };
+    dlog(`[inspectDraft B] OK - ${data.items?.length ?? 0} attachments (draft is live)`);
+  } catch (e) {
+    result.steps.attachments = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[inspectDraft B] FAIL -`, e.message, e.body);
+  }
+
+  dlog(`inspectDraft() complete for ${draftId}`);
+  return result;
 };
 
 /**
@@ -427,4 +524,4 @@ globalThis.phaseD = async function (subs, iAmSure) {
   return out;
 };
 
-console.log("loaded. run: await phaseA()  |  await inspect('REQ123')  |  DEBUG=" + DEBUG);
+console.log("loaded. run: await phaseA()  |  await inspect('REQ123')  |  await inspectDraft('DRAFT_ID')  |  DEBUG=" + DEBUG);

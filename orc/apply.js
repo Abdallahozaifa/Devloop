@@ -797,35 +797,115 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
     results.stages.questionnaireRead = { status: "SKIP", reason: "no questionnaireId" };
   }
 
-  // STAGE 3: DRAFT + ANSWERS
+  // STAGE 3: DRAFT + ANSWERS (sequential approach - no batch forward-references)
   console.log("\n--- STAGE 3: DRAFT + ANSWERS ---");
   const qVersion = results.questionnaireVersion || opts.version || 1;
-  try {
-    // Try reversed order first (draft first, then QR) as it's more logical
-    const submitRes = await submitDraftWithAnswersReversed(reqNum, answers, qVersion);
 
-    if (submitRes.status === "OK" && submitRes.draftId) {
-      console.log(`STAGE 3: PASS - Draft created, draftId=${submitRes.draftId}`);
-      results.draftId = submitRes.draftId;
-      results.stages.draftAnswers = { status: "PASS", draftId: submitRes.draftId };
-    } else if (submitRes.status === "OK") {
-      console.log("STAGE 3: PARTIAL - Batch returned 200 but no draftId in response");
-      results.stages.draftAnswers = { status: "PARTIAL", raw: submitRes };
-    } else {
-      console.log(`STAGE 3: FAIL - ${submitRes.error || submitRes.httpStatus}`);
-      results.stages.draftAnswers = { status: "FAIL", raw: submitRes };
-      // Try the original order as fallback
-      console.log("Trying original batch order...");
-      const submitRes2 = await submitDraftWithAnswers(reqNum, answers, null, qVersion);
-      if (submitRes2.status === "OK" && submitRes2.draftId) {
-        console.log(`STAGE 3: PASS (fallback) - Draft created, draftId=${submitRes2.draftId}`);
-        results.draftId = submitRes2.draftId;
-        results.stages.draftAnswers = { status: "PASS", draftId: submitRes2.draftId, usedFallback: true };
+  // Step 3a: Create draft alone, capture Location header for draft ID
+  console.log("Step 3a: Creating draft...");
+  let draftId = null;
+  try {
+    const draftRes = await fetch(`${BASE}/recruitingICEJobApplicationDrafts`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "Rest-Framework-Version": "9",
+      },
+      body: JSON.stringify({
+        Action: "SAVE_DRAFT",
+        RequisitionNumber: reqNum,
+        Content: JSON.stringify({ alternateEmail: "" }),
+      }),
+    });
+
+    // Log headers
+    const locationHeader = draftRes.headers.get("Location");
+    console.log("Draft response status:", draftRes.status);
+    console.log("Location header:", locationHeader);
+
+    // Try to get draft ID from Location header (e.g., ".../recruitingICEJobApplicationDrafts/12345")
+    if (locationHeader) {
+      const match = locationHeader.match(/recruitingICEJobApplicationDrafts\/(\d+)/);
+      if (match) {
+        draftId = match[1];
+        console.log("Draft ID from Location header:", draftId);
       }
     }
+
+    // Also check response body
+    const draftText = await draftRes.text();
+    let draftBody;
+    try { draftBody = JSON.parse(draftText); } catch { draftBody = draftText; }
+    console.log("Draft response body:", draftBody);
+
+    // Try to extract draft ID from body if not in header
+    if (!draftId && draftBody) {
+      draftId = draftBody.IceDraftId || draftBody.iceDraftId || draftBody.DraftId || draftBody.draftId;
+      if (draftId) console.log("Draft ID from response body:", draftId);
+    }
+
+    if (!draftRes.ok) {
+      console.log("Step 3a: FAIL - Draft creation failed");
+      console.log("Error details:", draftBody);
+      results.stages.draftAnswers = { status: "FAIL", step: "3a", error: `HTTP ${draftRes.status}`, body: draftBody };
+    }
   } catch (e) {
-    console.log(`STAGE 3: FAIL - ${e.message}`);
-    results.stages.draftAnswers = { status: "FAIL", error: e.message };
+    console.log(`Step 3a: FAIL - ${e.message}`);
+    results.stages.draftAnswers = { status: "FAIL", step: "3a", error: e.message };
+  }
+
+  // Step 3b: If we have a draft ID, post questionnaire responses
+  if (draftId) {
+    console.log(`\nStep 3b: Posting questionnaire responses to draft ${draftId}...`);
+    results.draftId = draftId;
+
+    const questionResponses = answers.map(a => ({
+      QuestionnaireQuestionId: a.QuestionnaireQuestionId,
+      QuestionAnswerId: a.QuestionAnswerId,
+      AnswerList: null,
+      AnswerLargeObject: null,
+    }));
+
+    try {
+      const qrRes = await fetch(`${BASE}/recruitingICEJobApplicationDrafts/${draftId}/child/questionnaireResponses`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Rest-Framework-Version": "9",
+        },
+        body: JSON.stringify({
+          Status: "I",
+          QuestionnaireVersionNumber: qVersion,
+          questionResponses: questionResponses,
+        }),
+      });
+
+      const qrText = await qrRes.text();
+      let qrBody;
+      try { qrBody = JSON.parse(qrText); } catch { qrBody = qrText; }
+
+      console.log("Questionnaire response status:", qrRes.status);
+      console.log("Questionnaire response body:", qrBody);
+
+      if (qrRes.ok) {
+        console.log(`STAGE 3: PASS - Draft ${draftId} created, ${answers.length} answers posted`);
+        results.stages.draftAnswers = { status: "PASS", draftId, answersPosted: answers.length };
+      } else {
+        console.log("Step 3b: FAIL - Questionnaire responses failed");
+        console.log("Error details:", qrBody);
+        // Draft was created but answers failed - still have draftId for verification
+        results.stages.draftAnswers = { status: "PARTIAL", draftId, step: "3b", error: `HTTP ${qrRes.status}`, body: qrBody };
+      }
+    } catch (e) {
+      console.log(`Step 3b: FAIL - ${e.message}`);
+      results.stages.draftAnswers = { status: "PARTIAL", draftId, step: "3b", error: e.message };
+    }
+  } else {
+    console.log("\nStep 3b: SKIP - No draft ID obtained");
+    console.log("STAGE 3: FAIL - Could not obtain draft ID from Location header or response body");
+    results.stages.draftAnswers = results.stages.draftAnswers || { status: "FAIL", reason: "no draft ID" };
   }
 
   // STAGE 4: VERIFY

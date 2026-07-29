@@ -680,97 +680,90 @@ globalThis.testFlow = async function (reqNum, opts = {}) {
   }
 
   // STAGE 1.5: RESOLVE QUESTIONNAIRE ID
+  // recruitingICEApplyFlows uses finder=findByRequisitionNumber with the HUMAN reqNum, not RequisitionId
   console.log("\n--- STAGE 1.5: RESOLVE QUESTIONNAIRE ID ---");
-  if (!results.questionnaireId && results.RequisitionId) {
-    const attempts = [];
-
-    // Attempt 1: recruitingICEApplyFlows - the SPA's "start application" resource
-    console.log("Trying recruitingICEApplyFlows...");
+  if (!results.questionnaireId) {
+    console.log(`Calling recruitingICEApplyFlows?finder=findByRequisitionNumber;RequisitionNumber=${reqNum}`);
     try {
       const afData = await api(
-        `/recruitingICEApplyFlows?finder=findByRequisitionId;RequisitionId=${results.RequisitionId}&onlyData=true`
+        `/recruitingICEApplyFlows?finder=findByRequisitionNumber;RequisitionNumber=${reqNum}&onlyData=true`
       );
-      const afItem = afData.items?.[0] ?? afData;
-      console.log("applyFlows response:", afItem);
-      attempts.push({ route: "applyFlows", status: "OK", data: afItem });
 
-      // Look for QuestionnaireId in various possible field names
-      const qId = afItem.QuestionnaireId || afItem.questionnaireId || afItem.InternalQuestionnaireId;
-      const qVer = afItem.QuestionnaireVersionNumber || afItem.VersionNumber || afItem.questionnaireVersion || 1;
+      // Log full response to see exact field names
+      console.log("recruitingICEApplyFlows FULL RESPONSE:", afData);
+
+      const afItem = afData.items?.[0] ?? afData;
+      console.log("First item:", afItem);
+      console.log("All field names:", Object.keys(afItem));
+
+      // Try various casings for QuestionnaireId
+      const qId = afItem.QuestionnaireId
+        || afItem.questionnaireId
+        || afItem.InternalQuestionnaireId
+        || afItem.internalQuestionnaireId
+        || afItem.QuestId
+        || afItem.questId;
+
+      // Try various casings for version
+      const qVer = afItem.QuestionnaireVersionNumber
+        || afItem.questionnaireVersionNumber
+        || afItem.VersionNumber
+        || afItem.versionNumber
+        || afItem.Version
+        || afItem.version
+        || 1;
+
       if (qId) {
         results.questionnaireId = qId;
         results.questionnaireVersion = qVer;
-        console.log(`STAGE 1.5: PASS (applyFlows) - QuestionnaireId=${qId}, Version=${qVer}`);
-        results.stages.resolveQuestionnaire = { status: "PASS", source: "applyFlows", data: afItem };
+        console.log(`STAGE 1.5: PASS - QuestionnaireId=${qId}, Version=${qVer}`);
+        results.stages.resolveQuestionnaire = { status: "PASS", source: "applyFlows", questionnaireId: qId, version: qVer, data: afItem };
+      } else {
+        // QuestionnaireId not directly on item - check for nested/child structures
+        console.log("\nQuestionnaireId NOT found directly on item.");
+        console.log("Checking for nested structures...");
+
+        // Check common nested patterns
+        const nestedChecks = [
+          ["questionnaire", afItem.questionnaire],
+          ["Questionnaire", afItem.Questionnaire],
+          ["questionnaireInfo", afItem.questionnaireInfo],
+          ["QuestionnaireInfo", afItem.QuestionnaireInfo],
+          ["links", afItem.links],
+          ["Links", afItem.Links],
+          ["children", afItem.children],
+        ];
+
+        for (const [name, val] of nestedChecks) {
+          if (val) {
+            console.log(`Found nested "${name}":`, val);
+          }
+        }
+
+        // Log all fields with their values for debugging
+        console.log("\n=== ALL FIELDS ON APPLY FLOW ITEM ===");
+        for (const [key, val] of Object.entries(afItem)) {
+          const valStr = typeof val === "object" ? JSON.stringify(val) : String(val);
+          console.log(`  ${key}: ${valStr.substring(0, 200)}${valStr.length > 200 ? "..." : ""}`);
+        }
+
+        console.log("\nSTAGE 1.5: FAIL - QuestionnaireId not found in response");
+        console.log("Check the fields above for a questionnaire reference.");
+        results.stages.resolveQuestionnaire = { status: "FAIL", reason: "QuestionnaireId not in response", fields: Object.keys(afItem), data: afItem };
       }
     } catch (e) {
-      console.log(`applyFlows failed - ${e.message}`);
-      if (e.body) console.log("Error body (may list valid finders):", e.body);
-      attempts.push({ route: "applyFlows", status: "FAIL", error: e.message, body: e.body });
+      console.log(`recruitingICEApplyFlows FAILED - ${e.message}`);
+      if (e.body) console.log("Error body:", e.body);
+      results.stages.resolveQuestionnaire = { status: "FAIL", error: e.message, body: e.body };
     }
-
-    // Attempt 2: recruitingICEApplyFlows with RequisitionNumber finder (if RequisitionId failed)
-    if (!results.questionnaireId) {
-      console.log("Trying recruitingICEApplyFlows by RequisitionNumber...");
-      try {
-        const afData2 = await api(
-          `/recruitingICEApplyFlows?finder=findByRequisitionNumber;RequisitionNumber=${reqNum}&onlyData=true`
-        );
-        const afItem2 = afData2.items?.[0] ?? afData2;
-        console.log("applyFlows (byNumber) response:", afItem2);
-        attempts.push({ route: "applyFlows-byNumber", status: "OK", data: afItem2 });
-
-        const qId = afItem2.QuestionnaireId || afItem2.questionnaireId || afItem2.InternalQuestionnaireId;
-        if (qId) {
-          results.questionnaireId = qId;
-          results.questionnaireVersion = afItem2.QuestionnaireVersionNumber || 1;
-          console.log(`STAGE 1.5: PASS (applyFlows-byNumber) - QuestionnaireId=${qId}`);
-          results.stages.resolveQuestionnaire = { status: "PASS", source: "applyFlows-byNumber", data: afItem2 };
-        }
-      } catch (e2) {
-        console.log(`applyFlows by RequisitionNumber failed - ${e2.message}`);
-        if (e2.body) console.log("Error body:", e2.body);
-        attempts.push({ route: "applyFlows-byNumber", status: "FAIL", error: e2.message });
-      }
-    }
-
-    // Attempt 3: questionnaireInstructions (unlikely but try)
-    if (!results.questionnaireId) {
-      console.log("Trying questionnaireInstructions...");
-      try {
-        const qiData = await api(
-          `/questionnaireInstructions?finder=findByRequisition;RequisitionId=${results.RequisitionId}&onlyData=true`
-        );
-        const qiItem = qiData.items?.[0];
-        attempts.push({ route: "questionnaireInstructions", status: "OK", data: qiItem });
-        if (qiItem?.QuestionnaireId) {
-          results.questionnaireId = qiItem.QuestionnaireId;
-          results.questionnaireVersion = qiItem.VersionNumber || 1;
-          console.log(`STAGE 1.5: PASS (questionnaireInstructions) - QuestionnaireId=${results.questionnaireId}`);
-          results.stages.resolveQuestionnaire = { status: "PASS", source: "questionnaireInstructions", data: qiItem };
-        }
-      } catch (e3) {
-        console.log(`questionnaireInstructions failed - ${e3.message}`);
-        attempts.push({ route: "questionnaireInstructions", status: "FAIL", error: e3.message });
-      }
-    }
-
-    // Log all attempts for debugging
-    if (!results.questionnaireId) {
-      console.log("\nAll attempts:");
-      console.table(attempts.map(a => ({ route: a.route, status: a.status })));
-      results.stages.resolveQuestionnaire = { status: "FAIL", attempts };
-    }
-  } else if (results.questionnaireId) {
+  } else {
     console.log(`STAGE 1.5: SKIP - questionnaireId already provided: ${results.questionnaireId}`);
     results.stages.resolveQuestionnaire = { status: "SKIP", reason: "already provided" };
   }
 
   // If we still don't have a questionnaireId, stop
   if (!results.questionnaireId) {
-    console.log("\nSTAGE 1.5: FAIL - Could not resolve questionnaireId");
-    console.log("Try manually: await api('/recruitingICEApplyFlows/describe') to see finders");
-    results.stages.resolveQuestionnaire = results.stages.resolveQuestionnaire || { status: "FAIL", reason: "could not resolve" };
+    console.log("\nSTAGE 1.5: FAIL - Could not resolve questionnaireId. Stopping.");
     return results;
   }
 

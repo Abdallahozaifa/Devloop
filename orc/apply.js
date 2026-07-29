@@ -31,6 +31,10 @@
  *   setAnswer(...)          write a single answer to a live draft
  *   applyAnswers(draftId,q) apply all ANSWER_MAP entries to a draft
  *   submitDraftWithAnswers  create draft + answers in one batch (real pattern)
+ *
+ * TEST RUNNER
+ *   testFlow(reqNum, opts)  end-to-end test: eligibility -> questionnaire ->
+ *                           draft+answers -> verify. STOPS before esign/confirm.
  */
 
 // ---------------------------------------------------------------------------
@@ -79,6 +83,17 @@ globalThis.REQS = globalThis.REQS || [
  *   ANSWER_MAP["IRC_WORK_AUTH_US"] = 300000123456789;
  */
 globalThis.ANSWER_MAP = globalThis.ANSWER_MAP || {};
+
+/**
+ * Pre-captured answer pairs from a working submission.
+ * Array of {QuestionnaireQuestionId, QuestionAnswerId}.
+ * Used as default for testFlow if opts.answers not provided.
+ */
+globalThis.TEST_ANSWERS = globalThis.TEST_ANSWERS || [
+  { QuestionnaireQuestionId: "300087165284932", QuestionAnswerId: "300055639616240" },
+  { QuestionnaireQuestionId: "300087165284926", QuestionAnswerId: "300055639616236" },
+  { QuestionnaireQuestionId: "300087165284929", QuestionAnswerId: "300055639616096" },
+];
 
 // ---------------------------------------------------------------------------
 
@@ -539,6 +554,180 @@ globalThis.submitDraftWithAnswersReversed = async function (requisitionNumber, a
     dlog(`[submitDraftWithAnswersReversed] FAIL -`, e.message);
     return { status: "FAIL", error: e.message };
   }
+};
+
+/**
+ * End-to-end test runner. Read-only or reversible - does NOT esign or confirm.
+ * Stops after verifying answers landed on draft.
+ *
+ * @param {string} reqNum - Requisition number to test
+ * @param {object} opts - { answers: [...], questionnaireId, version }
+ */
+globalThis.testFlow = async function (reqNum, opts = {}) {
+  const answers = opts.answers || TEST_ANSWERS;
+  const results = {
+    reqNum,
+    RequisitionId: null,
+    questionnaireId: opts.questionnaireId || null,
+    draftId: null,
+    answersStored: [],
+    stages: {},
+    allStagesPassed: false,
+  };
+
+  console.log("\n========== TEST FLOW START ==========");
+  console.log(`RequisitionNumber: ${reqNum}`);
+  console.log(`Answers to submit: ${answers.length}`);
+
+  // STAGE 1: ELIGIBILITY
+  console.log("\n--- STAGE 1: ELIGIBILITY ---");
+  try {
+    const fields = "RequisitionId,RequisitionNumber,HasAppliedFlag,CandidateReapplyFlag,RequisitionValidFlag,QuestionnaireId";
+    const data = await api(
+      `/recruitingOppMktJobDetails?finder=findByNumber;RequisitionNumber=${reqNum}&fields=${fields}&onlyData=true`
+    );
+    const item = data.items?.[0] ?? data;
+    results.RequisitionId = item.RequisitionId;
+    results.questionnaireId = results.questionnaireId || item.QuestionnaireId;
+
+    if (item.HasAppliedFlag === true) {
+      console.log("STAGE 1: FAIL - Already applied (HasAppliedFlag=true)");
+      results.stages.eligibility = { status: "FAIL", reason: "already applied" };
+      return results;
+    }
+
+    console.log(`STAGE 1: PASS - RequisitionId=${results.RequisitionId}, HasAppliedFlag=false`);
+    results.stages.eligibility = { status: "PASS", data: item };
+  } catch (e) {
+    console.log(`STAGE 1: FAIL - ${e.message}`);
+    results.stages.eligibility = { status: "FAIL", error: e.message };
+    return results;
+  }
+
+  // STAGE 2: QUESTIONNAIRE READ
+  console.log("\n--- STAGE 2: QUESTIONNAIRE READ ---");
+  if (results.questionnaireId) {
+    try {
+      const qRes = await describeQuestionnaire({
+        questionnaireId: results.questionnaireId,
+        version: opts.version || 1,
+      });
+      if (qRes.status === "OK" && qRes.questions?.length) {
+        console.log(`STAGE 2: PASS - ${qRes.questions.length} questions found`);
+        console.log("\nQuestions:");
+        qRes.questions.forEach((q, i) => {
+          console.log(`  ${i + 1}. [${q.questionnaireQuestionId}] ${q.title}`);
+        });
+        results.stages.questionnaireRead = { status: "PASS", count: qRes.questions.length, questions: qRes.questions };
+      } else {
+        console.log(`STAGE 2: PARTIAL - describeQuestionnaire returned but no questions parsed`);
+        results.stages.questionnaireRead = { status: "PARTIAL", raw: qRes };
+      }
+    } catch (e) {
+      console.log(`STAGE 2: FAIL - ${e.message}`);
+      results.stages.questionnaireRead = { status: "FAIL", error: e.message };
+      // Continue anyway - we can still try to submit answers
+    }
+  } else {
+    console.log("STAGE 2: SKIP - No questionnaireId available");
+    results.stages.questionnaireRead = { status: "SKIP", reason: "no questionnaireId" };
+  }
+
+  // STAGE 3: DRAFT + ANSWERS
+  console.log("\n--- STAGE 3: DRAFT + ANSWERS ---");
+  try {
+    // Try reversed order first (draft first, then QR) as it's more logical
+    const submitRes = await submitDraftWithAnswersReversed(reqNum, answers, opts.version || 1);
+
+    if (submitRes.status === "OK" && submitRes.draftId) {
+      console.log(`STAGE 3: PASS - Draft created, draftId=${submitRes.draftId}`);
+      results.draftId = submitRes.draftId;
+      results.stages.draftAnswers = { status: "PASS", draftId: submitRes.draftId };
+    } else if (submitRes.status === "OK") {
+      console.log("STAGE 3: PARTIAL - Batch returned 200 but no draftId in response");
+      results.stages.draftAnswers = { status: "PARTIAL", raw: submitRes };
+    } else {
+      console.log(`STAGE 3: FAIL - ${submitRes.error || submitRes.httpStatus}`);
+      results.stages.draftAnswers = { status: "FAIL", raw: submitRes };
+      // Try the original order as fallback
+      console.log("Trying original batch order...");
+      const submitRes2 = await submitDraftWithAnswers(reqNum, answers, null, opts.version || 1);
+      if (submitRes2.status === "OK" && submitRes2.draftId) {
+        console.log(`STAGE 3: PASS (fallback) - Draft created, draftId=${submitRes2.draftId}`);
+        results.draftId = submitRes2.draftId;
+        results.stages.draftAnswers = { status: "PASS", draftId: submitRes2.draftId, usedFallback: true };
+      }
+    }
+  } catch (e) {
+    console.log(`STAGE 3: FAIL - ${e.message}`);
+    results.stages.draftAnswers = { status: "FAIL", error: e.message };
+  }
+
+  // STAGE 4: VERIFY
+  console.log("\n--- STAGE 4: VERIFY ANSWERS ---");
+  if (results.draftId) {
+    try {
+      const qrData = await api(
+        `/recruitingICEJobApplicationDrafts/${results.draftId}/child/questionnaireResponses?onlyData=true&expand=all&limit=50`
+      );
+
+      // Extract stored answers
+      const stored = [];
+      if (qrData.items?.length) {
+        for (const item of qrData.items) {
+          const questions = item.questionResponses?.items || item.questionResponses || [];
+          for (const q of questions) {
+            if (q.QuestionnaireQuestionId && q.QuestionAnswerId) {
+              stored.push({
+                QuestionnaireQuestionId: q.QuestionnaireQuestionId,
+                QuestionAnswerId: q.QuestionAnswerId,
+              });
+            }
+          }
+        }
+      }
+
+      results.answersStored = stored;
+
+      if (stored.length > 0) {
+        console.log(`STAGE 4: PASS - ${stored.length} answers verified on draft`);
+        console.table(stored);
+        results.stages.verify = { status: "PASS", count: stored.length };
+      } else {
+        console.log("STAGE 4: PARTIAL - Draft readable but no answers found");
+        console.log("Raw questionnaireResponses:", qrData);
+        results.stages.verify = { status: "PARTIAL", raw: qrData };
+      }
+    } catch (e) {
+      console.log(`STAGE 4: FAIL - ${e.message}`);
+      results.stages.verify = { status: "FAIL", error: e.message };
+    }
+  } else {
+    console.log("STAGE 4: SKIP - No draftId to verify");
+    results.stages.verify = { status: "SKIP", reason: "no draftId" };
+  }
+
+  // STAGE 5: STOP
+  console.log("\n--- STAGE 5: STOP ---");
+  console.log("STOPPED before submit - review above. No esign, no confirm.");
+
+  // Summary
+  results.allStagesPassed =
+    results.stages.eligibility?.status === "PASS" &&
+    results.stages.draftAnswers?.status === "PASS" &&
+    results.stages.verify?.status === "PASS";
+
+  console.log("\n========== TEST FLOW SUMMARY ==========");
+  console.log({
+    reqNum: results.reqNum,
+    RequisitionId: results.RequisitionId,
+    questionnaireId: results.questionnaireId,
+    draftId: results.draftId,
+    answersStored: results.answersStored.length,
+    allStagesPassed: results.allStagesPassed,
+  });
+
+  return results;
 };
 
 // ---------------------------------------------------------------------------

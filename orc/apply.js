@@ -245,6 +245,62 @@ globalThis.inspect = async function (reqNum) {
     result.steps.questionnaire = { status: "SKIPPED", reason: "no DraftId found" };
   }
 
+  // Step E: Try to read questionnaire responses WITHOUT DraftId (SPA uses RequisitionId alone)
+  dlog(`[step E] attempting questionnaire reads without DraftId...`);
+  result.steps.altQuestionnaireRoutes = { routes: {} };
+
+  // Route E.1: recruitingUICandidateQuestionnaireResponses by RequisitionId
+  if (result.RequisitionId) {
+    try {
+      const data = await api(
+        `/recruitingUICandidateQuestionnaireResponses?finder=findByRequisitionId;RequisitionId=${result.RequisitionId}&onlyData=true&expand=all`
+      );
+      result.steps.altQuestionnaireRoutes.routes.uiCandidateQR = { status: "OK", data };
+      dlog(`[step E.1] uiCandidateQR: OK`, data);
+      if (data.items?.length && !result.questionnaire) {
+        result.questionnaire = data;
+        result.answersTable = readAnswers(data);
+      }
+    } catch (e) {
+      result.steps.altQuestionnaireRoutes.routes.uiCandidateQR = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[step E.1] uiCandidateQR: FAIL -`, e.message, e.body);
+    }
+
+    // Route E.2: recruitingICEJobApplications child questionnaireResponses with finder
+    try {
+      const data = await api(
+        `/recruitingICEJobApplications?finder=findByRequisition;RequisitionId=${result.RequisitionId}&expand=questionnaireResponses&onlyData=true`
+      );
+      result.steps.altQuestionnaireRoutes.routes.iceJobAppQR = { status: "OK", data };
+      dlog(`[step E.2] iceJobAppQR: OK`, data);
+      const qr = data.items?.[0]?.questionnaireResponses;
+      if (qr?.items?.length && !result.questionnaire) {
+        result.questionnaire = qr;
+        result.answersTable = readAnswers(qr);
+      }
+    } catch (e) {
+      result.steps.altQuestionnaireRoutes.routes.iceJobAppQR = { status: "FAIL", error: e.message, body: e.body };
+      dlog(`[step E.2] iceJobAppQR: FAIL -`, e.message, e.body);
+    }
+  }
+
+  // Route E.3: Enumerate all questionnaire-related resources via /describe
+  dlog(`[step E.3] enumerating questionnaire-related resources via /describe...`);
+  try {
+    const desc = await api("/describe");
+    const resources = desc.Resources || desc.resources || [];
+    const qResources = resources.filter(r => {
+      const name = (r.name || r.Name || "").toLowerCase();
+      return name.includes("uestionnaire") || name.includes("uestionresponse");
+    }).map(r => r.name || r.Name);
+    result.steps.altQuestionnaireRoutes.routes.describe = { status: "OK", questionnaireResources: qResources };
+    dlog(`[step E.3] questionnaire-related resources:`, qResources);
+    console.log("[orc] Questionnaire-related resources in this tenant:", qResources);
+  } catch (e) {
+    result.steps.altQuestionnaireRoutes.routes.describe = { status: "FAIL", error: e.message, body: e.body };
+    dlog(`[step E.3] describe: FAIL -`, e.message, e.body);
+  }
+
   dlog(`inspect() complete for ${reqNum}`);
   return result;
 };
